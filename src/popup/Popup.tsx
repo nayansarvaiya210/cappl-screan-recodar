@@ -202,17 +202,89 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [expandEditBar, setExpandEditBar] = useState(false);
   const [visibility, setVisibility] = useState<Record<string, boolean>>({});
 
+  // Real-time synced parameters
+  const [showHighlight, setShowHighlight] = useState(true);
+  const [showClickRipple, setShowClickRipple] = useState(true);
+  const [showCaptureBtn, setShowCaptureBtn] = useState(true);
+  const [showDrawingBar, setShowDrawingBar] = useState(true);
+
   useEffect(() => {
-    chrome.storage.local.get({ autoDownload: true, toolVisibility: {} }, (res) => {
+    // Load initial settings
+    chrome.storage.local.get({
+      autoDownload: true,
+      toolVisibility: {},
+      showHighlight: true,
+      showClickRipple: true,
+      showCaptureBtn: true,
+      showDrawingBar: true
+    }, (res) => {
       setAutoDownload(res.autoDownload !== false);
       setVisibility(res.toolVisibility || {});
+      setShowHighlight(res.showHighlight !== false);
+      setShowClickRipple(res.showClickRipple !== false);
+      setShowCaptureBtn(res.showCaptureBtn !== false);
+      setShowDrawingBar(res.showDrawingBar !== false);
     });
+
+    // Listen for live updates from page floating toolbar
+    const handleMessage = (message: any) => {
+      if (message.type === "SETTINGS_CHANGED") {
+        if (message.showHighlight !== undefined) setShowHighlight(message.showHighlight);
+        if (message.showClickRipple !== undefined) setShowClickRipple(message.showClickRipple);
+        if (message.showCaptureBtn !== undefined) setShowCaptureBtn(message.showCaptureBtn);
+        if (message.showDrawingBar !== undefined) setShowDrawingBar(message.showDrawingBar);
+      }
+    };
+    chrome.runtime.onMessage.addListener(handleMessage);
+    return () => {
+      chrome.runtime.onMessage.removeListener(handleMessage);
+    };
   }, []);
 
   const handleAutoDownloadChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
     setAutoDownload(checked);
     chrome.storage.local.set({ autoDownload: checked });
+  };
+
+  const updateSetting = (key: string, value: any) => {
+    chrome.storage.local.set({ [key]: value }, () => {
+      // Send message to active tabs to update toolbar in real-time
+      chrome.tabs.query({}, (tabs) => {
+        tabs.forEach((tab) => {
+          if (tab.id !== undefined) {
+            chrome.tabs.sendMessage(tab.id, {
+              type: "SETTINGS_CHANGED",
+              [key]: value
+            }).catch(() => {});
+          }
+        });
+      });
+    });
+  };
+
+  const handleHighlightToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    setShowHighlight(checked);
+    updateSetting('showHighlight', checked);
+  };
+
+  const handleRippleToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    setShowClickRipple(checked);
+    updateSetting('showClickRipple', checked);
+  };
+
+  const handleCaptureToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    setShowCaptureBtn(checked);
+    updateSetting('showCaptureBtn', checked);
+  };
+
+  const handleDrawingBarToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    setShowDrawingBar(checked);
+    updateSetting('showDrawingBar', checked);
   };
 
   const handleToolToggle = (toolId: string, checked: boolean) => {
@@ -236,6 +308,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
 
   const tools = [
     { id: 'highlight', label: 'Highlight Halo' },
+    { id: 'ripple', label: 'Click Ripple' },
     { id: 'pencil', label: 'Pencil / Freehand' },
     { id: 'highlighter', label: 'Highlighter' },
     { id: 'square', label: 'Square Shape' },
@@ -271,6 +344,58 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 type="checkbox" 
                 checked={autoDownload} 
                 onChange={handleAutoDownloadChange} 
+              />
+              <span className="slider-toggle"></span>
+            </label>
+          </div>
+
+          {/* Cursor Highlight Toggle */}
+          <div className="setting-row">
+            <span className="setting-label">Cursor Highlight Halo</span>
+            <label className="switch-toggle">
+              <input 
+                type="checkbox" 
+                checked={showHighlight} 
+                onChange={handleHighlightToggle} 
+              />
+              <span className="slider-toggle"></span>
+            </label>
+          </div>
+
+          {/* Click Ripple Toggle */}
+          <div className="setting-row">
+            <span className="setting-label">Click Ripple Effect</span>
+            <label className="switch-toggle">
+              <input 
+                type="checkbox" 
+                checked={showClickRipple} 
+                onChange={handleRippleToggle} 
+              />
+              <span className="slider-toggle"></span>
+            </label>
+          </div>
+
+          {/* Show Capture Button Toggle */}
+          <div className="setting-row">
+            <span className="setting-label">Show Capture Button</span>
+            <label className="switch-toggle">
+              <input 
+                type="checkbox" 
+                checked={showCaptureBtn} 
+                onChange={handleCaptureToggle} 
+              />
+              <span className="slider-toggle"></span>
+            </label>
+          </div>
+
+          {/* Show Drawing Bar Toggle */}
+          <div className="setting-row">
+            <span className="setting-label">Show Drawing Bar</span>
+            <label className="switch-toggle">
+              <input 
+                type="checkbox" 
+                checked={showDrawingBar} 
+                onChange={handleDrawingBarToggle} 
               />
               <span className="slider-toggle"></span>
             </label>

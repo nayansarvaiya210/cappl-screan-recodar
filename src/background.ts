@@ -2,6 +2,7 @@ let isRecording = false;
 let startTime: number | null = null;
 let recorderTabId: number | null = null;
 let lastActiveTabId: number | null = null;
+let currentDisplaySurface = "browser";
 
 let badgeInterval: any = null;
 
@@ -57,7 +58,8 @@ function broadcastState() {
   chrome.runtime.sendMessage({
     type: "STATE_CHANGED",
     isRecording,
-    startTime
+    startTime,
+    displaySurface: currentDisplaySurface
   }).catch(() => {
     // Suppress error when popup is not open
   });
@@ -69,7 +71,8 @@ function broadcastState() {
         chrome.tabs.sendMessage(tab.id, {
           type: "STATE_CHANGED",
           isRecording,
-          startTime
+          startTime,
+          displaySurface: currentDisplaySurface
         }).catch(() => {
           // Suppress errors for tabs where content script is not loaded
         });
@@ -96,7 +99,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // GET STATE
   if (msg.type === "GET_RECORDING_STATE") {
-    sendResponse({ isRecording, startTime });
+    sendResponse({ isRecording, startTime, displaySurface: currentDisplaySurface });
     return true;
   }
 
@@ -140,13 +143,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "RECORDING_STARTED") {
     isRecording = true;
     startTime = msg.startTime || Date.now();
+    currentDisplaySurface = msg.displaySurface || "browser";
     if (sender.tab && sender.tab.id) {
       recorderTabId = sender.tab.id;
     }
     broadcastState();
 
     // Inject content script into the last active tab to show overlay immediately
-    if (lastActiveTabId) {
+    if (lastActiveTabId && currentDisplaySurface === "browser") {
       chrome.scripting.executeScript({
         target: { tabId: lastActiveTabId },
         files: ["content.js"]
@@ -158,6 +162,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "RECORDING_STOPPED") {
     isRecording = false;
     startTime = null;
+    currentDisplaySurface = "browser"; // Reset default
     broadcastState();
   }
 
@@ -172,7 +177,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 // Auto-inject content script into active/updated tabs during recording
 function injectIntoTab(tabId: number) {
-  if (!isRecording) return;
+  if (!isRecording || currentDisplaySurface !== "browser") return;
   chrome.tabs.get(tabId, (tab) => {
     if (chrome.runtime.lastError || !tab || !tab.url) return;
     if (tab.url.startsWith("http://") || tab.url.startsWith("https://")) {

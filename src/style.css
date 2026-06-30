@@ -468,22 +468,125 @@ body.settings-active .popup-container {
 }
 
 .accordion-content {
-  max-height: 280px;
-  overflow-y: auto;
   padding: 8px 0;
   margin-top: 4px;
 }
 
-/* Custom Scrollbar for Accordion Content */
-.accordion-content::-webkit-scrollbar {
-  width: 4px;
+/* Premium Select Dropdown */
+.premium-select {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 140px;
+  text-align: left;
 }
 
-.accordion-content::-webkit-scrollbar-track {
-  background: transparent;
+.premium-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
 }
 
-.accordion-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
+.premium-select option {
+  background-color: #111827;
+  color: #ffffff;
 }
+
+/* Color Picker Row */
+.color-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.color-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+.color-btn:hover {
+  transform: scale(1.15);
+}
+
+.color-btn.selected {
+  transform: scale(1.15);
+  border-color: #ffffff;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.color-btn.custom-color {
+  background: linear-gradient(135deg, #ff0000, #00ff00, #0000ff);
+  position: relative;
+  overflow: hidden;
+}
+
+.color-btn.custom-color input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Size Selector Row */
+.size-selector-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.size-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #9ca3af;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.size-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.size-btn.selected {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.3);
+  color: #ffffff;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.2);
+}
+
+.size-dot {
+  background-color: currentColor;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.size-text {
+  font-size: 11px;
+  font-weight: 500;
+}
+

@@ -39,6 +39,8 @@
   let isRecording = false;
   let showHighlight = true;
   let showClickRipple = true;
+  let showCaptureBtn = true;
+  let showDrawingBar = true;
   let currentTool = 'none'; // 'none', 'pencil', 'highlighter', 'eraser', 'square', 'circle', 'line', 'arrow', 'laser', 'text', 'magnifier'
   let isDrawingMode = false;
   let currentColor = '#eab308'; // Default yellow
@@ -65,6 +67,7 @@
   let drawingCtx = null;
   let interactionCtx = null;
   let toolbarEl = null;
+  let minimizedTrigger = null;
 
   function getEffectiveBrushSize() {
     if (currentTool === 'pencil') return brushSize;
@@ -76,47 +79,58 @@
   function initOverlay() {
     if (overlayHost) return; // Already initialized
 
-    // Create the host element for Shadow DOM
-    overlayHost = document.createElement('div');
-    overlayHost.id = 'screen-recorder-overlay-host';
-    overlayHost.style.position = 'fixed';
-    overlayHost.style.top = '0';
-    overlayHost.style.left = '0';
-    overlayHost.style.width = '100vw';
-    overlayHost.style.height = '100vh';
-    overlayHost.style.zIndex = '2147483647';
-    overlayHost.style.pointerEvents = 'none';
+    loadSettingsFromStorage(() => {
+      // Create the host element for Shadow DOM
+      overlayHost = document.createElement('div');
+      overlayHost.id = 'screen-recorder-overlay-host';
+      overlayHost.style.position = 'fixed';
+      overlayHost.style.top = '0';
+      overlayHost.style.left = '0';
+      overlayHost.style.width = '100vw';
+      overlayHost.style.height = '100vh';
+      overlayHost.style.zIndex = '2147483647';
+      overlayHost.style.pointerEvents = 'none';
 
-    shadowRoot = overlayHost.attachShadow({ mode: 'open' });
-    document.body.appendChild(overlayHost);
+      shadowRoot = overlayHost.attachShadow({ mode: 'open' });
+      document.body.appendChild(overlayHost);
 
-    // Inject styles
-    const style = document.createElement('style');
-    style.textContent = getShadowStyles();
-    shadowRoot.appendChild(style);
+      // Inject styles
+      const style = document.createElement('style');
+      style.textContent = getShadowStyles();
+      shadowRoot.appendChild(style);
 
-    // Create container wrapper
-    const container = document.createElement('div');
-    container.className = 'sr-overlay-container';
-    shadowRoot.appendChild(container);
+      // Create container wrapper
+      const container = document.createElement('div');
+      container.className = 'sr-overlay-container';
+      shadowRoot.appendChild(container);
 
-    // Create Drawing Canvas
-    drawingCanvas = document.createElement('canvas');
-    drawingCanvas.className = 'sr-canvas sr-drawing-canvas';
-    container.appendChild(drawingCanvas);
-    drawingCtx = drawingCanvas.getContext('2d');
+      // Create Drawing Canvas
+      drawingCanvas = document.createElement('canvas');
+      drawingCanvas.className = 'sr-canvas sr-drawing-canvas';
+      container.appendChild(drawingCanvas);
+      drawingCtx = drawingCanvas.getContext('2d');
 
-    // Create Interaction Canvas (Mouse Highlight, Ripples)
-    interactionCanvas = document.createElement('canvas');
-    interactionCanvas.className = 'sr-canvas sr-interaction-canvas';
-    container.appendChild(interactionCanvas);
-    interactionCtx = interactionCanvas.getContext('2d');
+      // Create Interaction Canvas (Mouse Highlight, Ripples)
+      interactionCanvas = document.createElement('canvas');
+      interactionCanvas.className = 'sr-canvas sr-interaction-canvas';
+      container.appendChild(interactionCanvas);
+      interactionCtx = interactionCanvas.getContext('2d');
 
-    resizeCanvases();
-    createToolbar(container);
-    applyInitialToolVisibility();
-    setupEvents();
-    startLoop();
+      resizeCanvases();
+      createToolbar(container);
+      applyInitialToolVisibility();
+      setupEvents();
+      startLoop();
+
+      // Apply initial values
+      updateToolbarUI();
+      // If currentTool is not 'none', make sure it is selected!
+      if (currentTool !== 'none') {
+        const toolToSelect = currentTool;
+        currentTool = 'none'; // reset so selectTool sets it correctly
+        selectTool(toolToSelect, false);
+      }
+    });
   }
 
   function removeOverlay() {
@@ -151,6 +165,104 @@
   // Expose functions for subsequent script runs
   window.srInitOverlay = initOverlay;
   window.srRemoveOverlay = removeOverlay;
+
+  function loadSettingsFromStorage(callback) {
+    chrome.storage.local.get({
+      showHighlight: true,
+      showClickRipple: true,
+      showCaptureBtn: true,
+      showDrawingBar: true,
+      currentColor: '#eab308',
+      brushSize: 8,
+      currentTool: 'none'
+    }, (res) => {
+      showHighlight = res.showHighlight !== false;
+      showClickRipple = res.showClickRipple !== false;
+      showCaptureBtn = res.showCaptureBtn !== false;
+      showDrawingBar = res.showDrawingBar !== false;
+      currentColor = res.currentColor || '#eab308';
+      brushSize = res.brushSize || 8;
+      currentTool = res.currentTool || 'none';
+      if (callback) callback();
+    });
+  }
+
+  function saveAndBroadcastSettings(settings) {
+    chrome.storage.local.set(settings, () => {
+      chrome.runtime.sendMessage({
+        type: "SETTINGS_CHANGED",
+        ...settings
+      }).catch(() => {
+        // Ignore if popup is closed
+      });
+    });
+  }
+
+  function updateToolbarUI() {
+    if (!shadowRoot) return;
+
+    // Highlight Toggle
+    const btnHighlight = shadowRoot.getElementById('sr-btn-highlight');
+    if (btnHighlight) {
+      btnHighlight.classList.toggle('sr-active', showHighlight);
+    }
+
+    // Ripple Toggle
+    const btnRipple = shadowRoot.getElementById('sr-btn-ripple');
+    if (btnRipple) {
+      btnRipple.classList.toggle('sr-active', showClickRipple);
+    }
+
+    // Colors
+    const colorsContainer = shadowRoot.querySelector('.sr-colors');
+    if (colorsContainer) {
+      const colorsList = [
+        { value: '#eab308', name: 'yellow' },
+        { value: '#ef4444', name: 'red' },
+        { value: '#3b82f6', name: 'blue' },
+        { value: '#22c55e', name: 'green' }
+      ];
+      
+      const isCustomColor = !colorsList.some(c => c.value === currentColor);
+      
+      colorsContainer.querySelectorAll('.sr-color-btn').forEach(btn => {
+        if (btn.classList.contains('sr-color-custom')) {
+          btn.classList.toggle('sr-selected', isCustomColor);
+          if (isCustomColor) {
+            btn.style.background = currentColor;
+            btn.style.color = currentColor;
+          } else {
+            btn.style.background = 'linear-gradient(135deg, #ff0000, #00ff00, #0000ff)';
+            btn.style.color = 'transparent';
+          }
+          const pickerInput = btn.querySelector('input');
+          if (pickerInput) {
+            pickerInput.value = currentColor;
+          }
+        } else {
+          // Standard colors
+          const colorValue = colorsList.find(c => btn.classList.contains(`sr-color-${c.name}`))?.value;
+          btn.classList.toggle('sr-selected', colorValue === currentColor);
+        }
+      });
+    }
+
+    // Sizes
+    const sizesContainer = shadowRoot.querySelector('.sr-sizes');
+    if (sizesContainer) {
+      const sizesMap = { 4: 'small', 8: 'medium', 12: 'large' };
+      sizesContainer.querySelectorAll('.sr-size-btn').forEach(btn => {
+        const sizeClass = sizesMap[brushSize];
+        btn.classList.toggle('sr-selected', btn.classList.contains(`sr-size-${sizeClass}`));
+      });
+    }
+
+    // Capture Button
+    updateCaptureButtonVisibility(showCaptureBtn);
+
+    // Drawing Bar Visibility
+    updateDrawingBarVisibility(showDrawingBar);
+  }
 
   function redrawCanvas() {
     if (!drawingCtx) return;
@@ -752,7 +864,73 @@
     });
   }
 
-  function selectTool(toolName) {
+  function executeCapture() {
+    if (!toolbarEl) return;
+    
+    const wasToolbarHidden = toolbarEl.classList.contains('sr-hidden');
+    const wasTriggerHidden = minimizedTrigger ? minimizedTrigger.classList.contains('sr-hidden') : true;
+    
+    toolbarEl.style.display = 'none';
+    if (minimizedTrigger) minimizedTrigger.style.display = 'none';
+    
+    setTimeout(() => {
+      chrome.runtime.sendMessage({ type: "CAPTURE_ACTIVE_TAB" }, (response) => {
+        toolbarEl.style.display = '';
+        if (minimizedTrigger && !wasTriggerHidden) {
+          minimizedTrigger.style.display = '';
+        }
+        
+        if (chrome.runtime.lastError) return;
+        if (response && response.dataUrl) {
+          const link = document.createElement('a');
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+          link.download = `cappl_screenshot_${timestamp}.png`;
+          link.href = response.dataUrl;
+          if (shadowRoot) {
+            shadowRoot.appendChild(link);
+          } else {
+            document.body.appendChild(link);
+          }
+          link.click();
+          link.remove();
+        }
+      });
+    }, 100);
+  }
+
+  function updateCaptureButtonVisibility(isVisible) {
+    if (!shadowRoot) return;
+    const btn = shadowRoot.getElementById('sr-btn-capture');
+    if (btn) {
+      if (isVisible) {
+        btn.classList.remove('sr-hidden');
+      } else {
+        btn.classList.add('sr-hidden');
+      }
+    }
+  }
+
+  function updateDrawingBarVisibility(isVisible) {
+    showDrawingBar = isVisible;
+    if (!toolbarEl) return;
+    if (isVisible) {
+      const isCollapsed = minimizedTrigger && !minimizedTrigger.classList.contains('sr-hidden');
+      if (isCollapsed) {
+        minimizedTrigger.classList.remove('sr-hidden');
+        toolbarEl.classList.add('sr-hidden');
+        ensureElementInBounds(minimizedTrigger);
+      } else {
+        toolbarEl.classList.remove('sr-hidden');
+        if (minimizedTrigger) minimizedTrigger.classList.add('sr-hidden');
+        ensureElementInBounds(toolbarEl);
+      }
+    } else {
+      toolbarEl.classList.add('sr-hidden');
+      if (minimizedTrigger) minimizedTrigger.classList.add('sr-hidden');
+    }
+  }
+
+  function selectTool(toolName, shouldBroadcast = true, isDirectSet = false) {
     // Clean up magnifier if switching away
     if (currentTool === 'magnifier') {
       window.removeEventListener('scroll', refreshMagnifierImage);
@@ -760,10 +938,14 @@
       magnifierImageLoaded = false;
     }
 
-    if (currentTool === toolName) {
-      currentTool = 'none';
-    } else {
+    if (isDirectSet) {
       currentTool = toolName;
+    } else {
+      if (currentTool === toolName) {
+        currentTool = 'none';
+      } else {
+        currentTool = toolName;
+      }
     }
 
     // Initialize magnifier if switching to it
@@ -794,6 +976,10 @@
       } else {
         interactionCanvas.style.cursor = 'crosshair';
       }
+    }
+
+    if (shouldBroadcast) {
+      saveAndBroadcastSettings({ currentTool });
     }
   }
 
@@ -860,7 +1046,7 @@
 
     // Highlight Toggle
     const btnHighlight = document.createElement('button');
-    btnHighlight.className = 'sr-btn sr-active';
+    btnHighlight.className = 'sr-btn' + (showHighlight ? ' sr-active' : '');
     btnHighlight.id = 'sr-btn-highlight';
     btnHighlight.title = 'Toggle Cursor Highlight';
     btnHighlight.dataset.tooltip = 'Cursor Highlight';
@@ -873,12 +1059,13 @@
     btnHighlight.addEventListener('click', () => {
       showHighlight = !showHighlight;
       btnHighlight.classList.toggle('sr-active', showHighlight);
+      saveAndBroadcastSettings({ showHighlight });
     });
     toolbarEl.appendChild(btnHighlight);
 
     // Ripple Toggle
     const btnRipple = document.createElement('button');
-    btnRipple.className = 'sr-btn sr-active';
+    btnRipple.className = 'sr-btn' + (showClickRipple ? ' sr-active' : '');
     btnRipple.id = 'sr-btn-ripple';
     btnRipple.title = 'Toggle Click Ripple';
     btnRipple.dataset.tooltip = 'Click Ripple';
@@ -892,6 +1079,7 @@
     btnRipple.addEventListener('click', () => {
       showClickRipple = !showClickRipple;
       btnRipple.classList.toggle('sr-active', showClickRipple);
+      saveAndBroadcastSettings({ showClickRipple });
     });
     toolbarEl.appendChild(btnRipple);
 
@@ -1057,17 +1245,26 @@
       { value: '#22c55e', name: 'green' }
     ];
 
+    const isCustomColor = !colorsList.some(c => c.value === currentColor);
+
     // Custom Color Picker Button
     const customColorBtn = document.createElement('button');
-    customColorBtn.className = 'sr-color-btn sr-color-custom';
+    customColorBtn.className = 'sr-color-btn sr-color-custom' + (isCustomColor ? ' sr-selected' : '');
     customColorBtn.title = 'Custom Color Picker';
     customColorBtn.dataset.tooltip = 'Custom Color';
-    customColorBtn.style.background = 'linear-gradient(135deg, #ff0000, #00ff00, #0000ff)';
+    if (isCustomColor) {
+      customColorBtn.style.background = currentColor;
+      customColorBtn.style.color = currentColor;
+    } else {
+      customColorBtn.style.background = 'linear-gradient(135deg, #ff0000, #00ff00, #0000ff)';
+      customColorBtn.style.color = 'transparent';
+    }
     customColorBtn.style.position = 'relative';
     customColorBtn.style.overflow = 'hidden';
     
     const colorPickerInput = document.createElement('input');
     colorPickerInput.type = 'color';
+    colorPickerInput.value = currentColor;
     colorPickerInput.style.position = 'absolute';
     colorPickerInput.style.top = '0';
     colorPickerInput.style.left = '0';
@@ -1087,14 +1284,17 @@
       
       colorsContainer.querySelectorAll('.sr-color-btn').forEach(btn => btn.classList.remove('sr-selected'));
       customColorBtn.classList.add('sr-selected');
+
+      saveAndBroadcastSettings({ currentColor });
     };
 
     colorPickerInput.addEventListener('input', handleCustomColorChange);
     colorPickerInput.addEventListener('change', handleCustomColorChange);
 
-    colorsList.forEach((color, idx) => {
+    colorsList.forEach((color) => {
       const colorBtn = document.createElement('button');
-      colorBtn.className = `sr-color-btn sr-color-${color.name}` + (idx === 0 ? ' sr-selected' : '');
+      const isSelected = currentColor === color.value;
+      colorBtn.className = `sr-color-btn sr-color-${color.name}` + (isSelected ? ' sr-selected' : '');
       colorBtn.style.backgroundColor = color.value;
       colorBtn.title = `Switch color to ${color.name}`;
       colorBtn.dataset.tooltip = color.name.charAt(0).toUpperCase() + color.name.slice(1);
@@ -1106,6 +1306,8 @@
         // Reset custom color button back to rainbow gradient
         customColorBtn.style.background = 'linear-gradient(135deg, #ff0000, #00ff00, #0000ff)';
         customColorBtn.style.color = 'transparent';
+
+        saveAndBroadcastSettings({ currentColor });
       });
       colorsContainer.appendChild(colorBtn);
     });
@@ -1123,13 +1325,14 @@
 
     const sizesList = [
       { value: 4, name: 'small', title: 'Thin brush' },
-      { value: 8, name: 'medium', title: 'Medium brush', selected: true },
+      { value: 8, name: 'medium', title: 'Medium brush' },
       { value: 12, name: 'large', title: 'Thick brush' }
     ];
 
     sizesList.forEach(size => {
       const sizeBtn = document.createElement('button');
-      sizeBtn.className = `sr-size-btn sr-size-${size.name}` + (size.selected ? ' sr-selected' : '');
+      const isSelected = brushSize === size.value;
+      sizeBtn.className = `sr-size-btn sr-size-${size.name}` + (isSelected ? ' sr-selected' : '');
       sizeBtn.title = size.title;
       sizeBtn.dataset.tooltip = size.title;
 
@@ -1143,6 +1346,8 @@
         brushSize = size.value;
         sizesContainer.querySelectorAll('.sr-size-btn').forEach(btn => btn.classList.remove('sr-selected'));
         sizeBtn.classList.add('sr-selected');
+
+        saveAndBroadcastSettings({ brushSize });
       });
       sizesContainer.appendChild(sizeBtn);
     });
@@ -1182,6 +1387,21 @@
     btnRedo.addEventListener('click', executeRedo);
     toolbarEl.appendChild(btnRedo);
 
+    // Capture Button
+    const btnCapture = document.createElement('button');
+    btnCapture.className = 'sr-btn';
+    btnCapture.id = 'sr-btn-capture';
+    btnCapture.title = 'Capture screen image';
+    btnCapture.dataset.tooltip = 'Capture Image';
+    btnCapture.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    `;
+    btnCapture.addEventListener('click', executeCapture);
+    toolbarEl.appendChild(btnCapture);
+
     // Clear Button
     const btnClear = document.createElement('button');
     btnClear.className = 'sr-btn sr-btn-clear';
@@ -1209,8 +1429,25 @@
     `;
     toolbarEl.appendChild(btnCollapse);
 
+    // Close / Hide Drawing Bar Button
+    const btnCloseBar = document.createElement('button');
+    btnCloseBar.className = 'sr-btn sr-btn-close-bar';
+    btnCloseBar.id = 'sr-btn-close-bar';
+    btnCloseBar.title = 'Hide drawing bar completely';
+    btnCloseBar.dataset.tooltip = 'Hide Bar';
+    btnCloseBar.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    `;
+    btnCloseBar.addEventListener('click', () => {
+      saveAndBroadcastSettings({ showDrawingBar: false });
+      updateDrawingBarVisibility(false);
+    });
+    toolbarEl.appendChild(btnCloseBar);
+
     // Minimized Floating Trigger Button
-    const minimizedTrigger = document.createElement('button');
+    minimizedTrigger = document.createElement('button');
     minimizedTrigger.className = 'sr-minimized-trigger sr-hidden';
     minimizedTrigger.title = 'Expand drawing tools';
     minimizedTrigger.dataset.tooltip = 'Expand Tools';
@@ -1228,21 +1465,75 @@
       minimizedTrigger.style.right = toolbarEl.style.right;
       minimizedTrigger.style.top = toolbarEl.style.top;
       minimizedTrigger.style.left = toolbarEl.style.left;
+
+      if (toolbarEl.style.top) {
+        ensureElementInBounds(minimizedTrigger);
+      }
     });
 
-    minimizedTrigger.addEventListener('click', () => {
+    let startX = 0;
+    let startY = 0;
+    minimizedTrigger.addEventListener('mousedown', (e) => {
+      startX = e.clientX;
+      startY = e.clientY;
+    });
+
+    minimizedTrigger.addEventListener('click', (e) => {
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.sqrt(dx * dx + dy * dy) > 5) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       minimizedTrigger.classList.add('sr-hidden');
       toolbarEl.classList.remove('sr-hidden');
       toolbarEl.style.bottom = minimizedTrigger.style.bottom;
       toolbarEl.style.right = minimizedTrigger.style.right;
       toolbarEl.style.top = minimizedTrigger.style.top;
       toolbarEl.style.left = minimizedTrigger.style.left;
+
+      if (minimizedTrigger.style.top) {
+        ensureElementInBounds(toolbarEl);
+      }
     });
 
     makeDraggable(toolbarEl, dragHandle);
     makeDraggable(minimizedTrigger, minimizedTrigger);
 
     parent.appendChild(toolbarEl);
+  }
+
+  function ensureElementInBounds(element) {
+    const isHidden = element.classList.contains('sr-hidden');
+    if (isHidden) {
+      element.classList.remove('sr-hidden');
+    }
+
+    const width = element.offsetWidth;
+    const height = element.offsetHeight;
+
+    if (isHidden) {
+      element.classList.add('sr-hidden');
+    }
+
+    let currentTop = parseFloat(element.style.top);
+    let currentLeft = parseFloat(element.style.left);
+
+    if (isNaN(currentTop)) currentTop = element.offsetTop;
+    if (isNaN(currentLeft)) currentLeft = element.offsetLeft;
+
+    const maxTop = window.innerHeight - height - 10;
+    const maxLeft = window.innerWidth - width - 10;
+
+    const boundedTop = Math.max(10, Math.min(currentTop, maxTop));
+    const boundedLeft = Math.max(10, Math.min(currentLeft, maxLeft));
+
+    element.style.top = boundedTop + "px";
+    element.style.left = boundedLeft + "px";
+    element.style.bottom = "auto";
+    element.style.right = "auto";
   }
 
   function makeDraggable(element, handle) {
@@ -1304,7 +1595,7 @@
   }
 
   function applyInitialToolVisibility() {
-    const tools = ['highlight', 'pencil', 'highlighter', 'square', 'circle', 'line', 'arrow', 'laser', 'magnifier', 'text', 'eraser', 'clear', 'undo', 'redo'];
+    const tools = ['highlight', 'ripple', 'pencil', 'highlighter', 'square', 'circle', 'line', 'arrow', 'laser', 'magnifier', 'text', 'eraser', 'clear', 'undo', 'redo'];
     chrome.storage.local.get({ toolVisibility: {} }, (res) => {
       const visibility = res.toolVisibility || {};
       tools.forEach(toolId => {
@@ -1506,7 +1797,8 @@
         background-color: #ffffff;
       }
 
-      .sr-btn-clear:hover {
+      .sr-btn-clear:hover,
+      .sr-btn-close-bar:hover {
         color: #ef4444;
         background: rgba(239, 68, 68, 0.1);
       }
@@ -1597,7 +1889,8 @@
     if (chrome.runtime.lastError) return;
     if (response) {
       isRecording = response.isRecording;
-      if (isRecording) {
+      const displaySurface = response.displaySurface || "browser";
+      if (isRecording && displaySurface === "browser") {
         initOverlay();
       }
     }
@@ -1607,7 +1900,8 @@
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === "STATE_CHANGED") {
       isRecording = message.isRecording;
-      if (isRecording) {
+      const displaySurface = message.displaySurface || "browser";
+      if (isRecording && displaySurface === "browser") {
         initOverlay();
       } else {
         removeOverlay();
@@ -1615,6 +1909,36 @@
     } else if (message.type === "TOOL_VISIBILITY_CHANGED") {
       if (typeof updateToolbarButtonVisibility === 'function') {
         updateToolbarButtonVisibility(message.toolId, message.isVisible);
+      }
+    } else if (message.type === "SETTINGS_CHANGED") {
+      if (message.showHighlight !== undefined) {
+        showHighlight = message.showHighlight;
+      }
+      if (message.showClickRipple !== undefined) {
+        showClickRipple = message.showClickRipple;
+      }
+      if (message.showCaptureBtn !== undefined) {
+        showCaptureBtn = message.showCaptureBtn;
+      }
+      if (message.showDrawingBar !== undefined) {
+        showDrawingBar = message.showDrawingBar;
+        if (typeof updateDrawingBarVisibility === 'function') {
+          updateDrawingBarVisibility(showDrawingBar);
+        }
+      }
+      if (message.currentColor !== undefined) {
+        currentColor = message.currentColor;
+      }
+      if (message.brushSize !== undefined) {
+        brushSize = message.brushSize;
+      }
+      if (message.currentTool !== undefined) {
+        if (currentTool !== message.currentTool) {
+          selectTool(message.currentTool, false, true);
+        }
+      }
+      if (typeof updateToolbarUI === 'function') {
+        updateToolbarUI();
       }
     }
   });

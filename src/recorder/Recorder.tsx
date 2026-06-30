@@ -70,7 +70,13 @@ export default function Recorder() {
         chrome.runtime.connect({ name: "recorder-connection" });
 
         // Notify background.js that recording has successfully started
-        chrome.runtime.sendMessage({ type: "RECORDING_STARTED", startTime: Date.now() }).catch(() => {});
+        const track = stream.getVideoTracks()[0];
+        const displaySurface = track ? (track.getSettings()?.displaySurface || "browser") : "browser";
+        chrome.runtime.sendMessage({
+          type: "RECORDING_STARTED",
+          startTime: Date.now(),
+          displaySurface
+        }).catch(() => {});
       } catch (err) {
         console.error("Recording failed:", err);
         // User cancelled or error occurred -> close the tab safely
