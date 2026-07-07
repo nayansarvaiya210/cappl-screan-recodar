@@ -55,9 +55,9 @@ export default function Recorder() {
 
     async function startRecording() {
       try {
-        const settings = await new Promise<{ recordMic?: boolean }>((resolve) => {
-          chrome.storage.local.get({ recordMic: false }, (res) => {
-            resolve(res);
+        const settings = await new Promise<{ recordMic?: boolean; recordingQuality?: string }>((resolve) => {
+          chrome.storage.local.get({ recordMic: false, recordingQuality: "720p" }, (res) => {
+            resolve(res as any);
           });
         });
 
@@ -87,8 +87,53 @@ export default function Recorder() {
           }
         }
 
+        const quality = settings.recordingQuality || "720p";
+
+        // Check if 4K is requested and if the system supports it
+        if (quality === "4k") {
+          const physicalWidth = window.screen.width * (window.devicePixelRatio || 1);
+          const physicalHeight = window.screen.height * (window.devicePixelRatio || 1);
+          const systemSupports4K = physicalWidth >= 3840 || physicalHeight >= 2160;
+          if (!systemSupports4K) {
+            alert("Your system does not support 4K resolution.");
+            chrome.storage.local.set({ recordingQuality: "720p" });
+            window.close();
+            return;
+          }
+        }
+
+        let videoConstraints: any = true;
+        let videoBitrate = 2500000; // Default 2.5 Mbps
+
+        if (quality === "720p") {
+          videoConstraints = {
+            width: { max: 1280 },
+            height: { max: 720 },
+            frameRate: { ideal: 30 }
+          };
+          videoBitrate = 2500000; // 2.5 Mbps
+        } else if (quality === "1080p") {
+          videoConstraints = {
+            width: { max: 1920 },
+            height: { max: 1080 },
+            frameRate: { ideal: 30 }
+          };
+          videoBitrate = 5000000; // 5 Mbps
+        } else if (quality === "4k") {
+          videoConstraints = {
+            width: { max: 3840 },
+            height: { max: 2160 },
+            frameRate: { ideal: 30 }
+          };
+          videoBitrate = 30000000; // 30 Mbps
+        } else {
+          // quality === "auto"
+          videoConstraints = true;
+          videoBitrate = 5000000; // 5 Mbps default fallback
+        }
+
         displayStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
+          video: videoConstraints,
           audio: true,
         });
 
@@ -115,8 +160,14 @@ export default function Recorder() {
           finalStream.addTrack(mixedAudioTrack);
         }
 
+        let mimeType = "video/webm";
+        if (MediaRecorder.isTypeSupported("video/webm;codecs=vp9")) {
+          mimeType = "video/webm;codecs=vp9";
+        }
+
         const mediaRecorder = new MediaRecorder(finalStream, {
-          mimeType: "video/webm",
+          mimeType: mimeType,
+          videoBitsPerSecond: videoBitrate,
         });
         mediaRecorderRef.current = mediaRecorder;
 

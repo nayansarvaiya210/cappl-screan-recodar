@@ -200,6 +200,7 @@ export default function Popup() {
 function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecording: boolean }) {
   const [autoDownload, setAutoDownload] = useState(true);
   const [recordMic, setRecordMic] = useState(false);
+  const [recordingQuality, setRecordingQuality] = useState("720p");
   const [expandEditBar, setExpandEditBar] = useState(false);
   const [visibility, setVisibility] = useState<Record<string, boolean>>({});
 
@@ -218,7 +219,8 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
       showClickRipple: true,
       showCaptureBtn: true,
       showDrawingBar: true,
-      recordMic: false
+      recordMic: false,
+      recordingQuality: "720p"
     }, (res) => {
       setAutoDownload(res.autoDownload !== false);
       setVisibility(res.toolVisibility || {});
@@ -227,6 +229,7 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
       setShowCaptureBtn(res.showCaptureBtn !== false);
       setShowDrawingBar(res.showDrawingBar !== false);
       setRecordMic(res.recordMic || false);
+      setRecordingQuality(res.recordingQuality || "720p");
     });
 
     // Listen for live updates from page floating toolbar
@@ -363,6 +366,109 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
     });
   };
 
+  const getToolIcon = (toolId: string) => {
+    switch (toolId) {
+      case 'highlight':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.042 9.152 12 12M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+        );
+      case 'ripple':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m12-9a9 9 0 1 1-6 0" />
+          </svg>
+        );
+      case 'mic':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 0 3-3V4.5a3 3 0 0 0-6 0v8.25a3 3 0 0 0 3 3Z" />
+          </svg>
+        );
+      case 'pencil':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.83 20.08a4.5 4.5 0 0 1-2.012 1.229l-3.57.992.993-3.57a4.5 4.5 0 0 1 1.229-2.012L16.863 4.487Zm0 0L19.5 7.125" />
+          </svg>
+        );
+      case 'highlighter':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 0 0-2.22 4.283 9 9 0 1 1 11.233-11.233 3 3 0 0 0-4.283 2.22m-4.73 4.73a3 3 0 0 1 4.73-4.73" />
+          </svg>
+        );
+      case 'square':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <rect x="5" y="5" width="14" height="14" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        );
+      case 'circle':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+        );
+      case 'line':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 4.5-15 15" />
+          </svg>
+        );
+      case 'arrow':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3" />
+          </svg>
+        );
+      case 'laser':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 21L13.688 18M9.043 14.89l-5.113.73 3.688-3.688m6.302-3.131L19.5 3.5" />
+          </svg>
+        );
+      case 'magnifier':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.637 10.637Z" />
+          </svg>
+        );
+      case 'text':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-15h-15" />
+          </svg>
+        );
+      case 'eraser':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5-4.5 4.5" />
+          </svg>
+        );
+      case 'clear':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+          </svg>
+        );
+      case 'undo':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
+          </svg>
+        );
+      case 'redo':
+        return (
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', marginRight: '6px', opacity: 0.8 }}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="m15 15 6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3" />
+          </svg>
+        );
+      default:
+        return null;
+    }
+  };
+
   return (
     <div id="settings-modal" className="modal-overlay">
       <div className="modal-content">
@@ -374,10 +480,15 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
             </svg>
           </button>
         </div>
-        <div className="modal-body">
+         <div className="modal-body">
           {/* Auto Download Setting */}
           <div className="setting-row">
-            <span className="setting-label">Auto Download WebM</span>
+            <span className="setting-label">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '16px', height: '16px', color: '#a78bfa' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 1 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Auto Download WebM
+            </span>
             <label className="switch-toggle">
               <input 
                 type="checkbox" 
@@ -390,7 +501,12 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
 
           {/* Record Microphone Setting */}
           <div className="setting-row">
-            <span className="setting-label">Record Microphone</span>
+            <span className="setting-label">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '16px', height: '16px', color: '#a78bfa' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 0 3-3V4.5a3 3 0 0 0-6 0v8.25a3 3 0 0 0 3 3Z" />
+              </svg>
+              Record Microphone
+            </span>
             <label className="switch-toggle">
               <input 
                 type="checkbox" 
@@ -401,9 +517,46 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
             </label>
           </div>
 
+          {/* Recording Quality Setting */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+            <div className="setting-row" style={{ marginBottom: 0 }}>
+              <span className="setting-label">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '16px', height: '16px', color: '#a78bfa' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
+                </svg>
+                Recording Quality
+              </span>
+              <select
+                className="premium-select"
+                value={recordingQuality}
+                disabled={isRecording}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setRecordingQuality(val);
+                  chrome.storage.local.set({ recordingQuality: val });
+                }}
+              >
+                <option value="auto">Auto</option>
+                <option value="720p">720p</option>
+                <option value="1080p">1080p</option>
+                <option value="4k">4K (Native)</option>
+              </select>
+            </div>
+            {isRecording && (
+              <span style={{ fontSize: '10px', color: '#ef4444', textAlign: 'right', display: 'block' }}>
+                Cannot change quality during recording
+              </span>
+            )}
+          </div>
+
           {/* Cursor Highlight Toggle */}
           <div className="setting-row">
-            <span className="setting-label">Cursor Highlight Halo</span>
+            <span className="setting-label">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '16px', height: '16px', color: '#a78bfa' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.042 9.152 12 12M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+              </svg>
+              Cursor Highlight Halo
+            </span>
             <label className="switch-toggle">
               <input 
                 type="checkbox" 
@@ -416,7 +569,12 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
 
           {/* Click Ripple Toggle */}
           <div className="setting-row">
-            <span className="setting-label">Click Ripple Effect</span>
+            <span className="setting-label">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '16px', height: '16px', color: '#a78bfa' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m12-9a9 9 0 1 1-6 0" />
+              </svg>
+              Click Ripple Effect
+            </span>
             <label className="switch-toggle">
               <input 
                 type="checkbox" 
@@ -429,7 +587,12 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
 
           {/* Show Capture Button Toggle */}
           <div className="setting-row">
-            <span className="setting-label">Show Capture Button</span>
+            <span className="setting-label">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '16px', height: '16px', color: '#a78bfa' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0a2.192 2.192 0 0 0-1.736 1.039l-.821 1.316ZM16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+              </svg>
+              Show Capture Button
+            </span>
             <label className="switch-toggle">
               <input 
                 type="checkbox" 
@@ -442,7 +605,12 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
 
           {/* Show Drawing Bar Toggle */}
           <div className="setting-row">
-            <span className="setting-label">Show Drawing Bar</span>
+            <span className="setting-label">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '16px', height: '16px', color: '#a78bfa' }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 0 0-2.22 4.283 9 9 0 1 1 11.233-11.233 3 3 0 0 0-4.283 2.22m-4.73 4.73a3 3 0 0 1 4.73-4.73m-4.73 4.73.41-1.95a1.5 1.5 0 0 1 .389-.628l1.395-1.395m0 0a8.06 8.06 0 0 1-3.3-3.3m3.3 3.3-1.395 1.395a1.5 1.5 0 0 1-.628.389l-1.95.41Zm9.6-11.19a2.25 2.25 0 1 0-3.181-3.181L6.75 19.5v3h3L21.75 12.75Z" />
+              </svg>
+              Show Drawing Bar
+            </span>
             <label className="switch-toggle">
               <input 
                 type="checkbox" 
@@ -453,13 +621,18 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
             </label>
           </div>
 
-          {/* Edit bar setting Accordion */}
+          {/* Edit Drawing bar settings Accordion */}
           <div className="accordion-section">
             <div 
               className="accordion-header" 
               onClick={() => setExpandEditBar(!expandEditBar)}
             >
-              <span>Edit bar setting</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '16px', height: '16px', color: '#a78bfa' }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 13.5V3.75m0 9.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 3.75V16.5m12-3V3.75m0 9.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 3.75V16.5m-6-9V3.75m0 3.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 9.75V10.5" />
+                </svg>
+                Edit Drawing Bar Settings
+              </span>
               <svg 
                 className={`accordion-chevron ${expandEditBar ? 'expanded' : ''}`} 
                 xmlns="http://www.w3.org/2000/svg" 
@@ -476,7 +649,12 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
               <div className="accordion-content">
                 {/* Master Toggle All Buttons */}
                 <div className="setting-row" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '10px', marginBottom: '10px' }}>
-                  <span className="setting-label" style={{ fontWeight: '600', color: '#f3f4f6' }}>Toggle All Buttons</span>
+                  <span className="setting-label" style={{ fontWeight: '600', color: '#f3f4f6' }}>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" style={{ width: '14px', height: '14px', color: '#a78bfa' }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    Toggle All Buttons
+                  </span>
                   <label className="switch-toggle">
                     <input 
                       type="checkbox" 
@@ -491,7 +669,10 @@ function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecord
                   const isVisible = visibility[tool.id] !== false;
                   return (
                     <div className="setting-row" key={tool.id} style={{ paddingLeft: '8px', margin: '8px 0' }}>
-                      <span className="setting-label" style={{ fontSize: '12px', color: '#9ca3af' }}>{tool.label}</span>
+                      <span className="setting-label" style={{ fontSize: '12px', color: '#9ca3af' }}>
+                        {getToolIcon(tool.id)}
+                        {tool.label}
+                      </span>
                       <label className="switch-toggle" style={{ width: '28px', height: '16px' }}>
                         <input 
                           type="checkbox" 
