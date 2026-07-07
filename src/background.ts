@@ -176,6 +176,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       chrome.tabs.sendMessage(recorderTabId, { type: "STOP" }).catch(() => {});
     }
   }
+
+  // TOGGLE MIC AT RUNTIME (forward to recorder tab)
+  if (msg.type === "TOGGLE_MIC_RUNTIME") {
+    if (recorderTabId) {
+      chrome.tabs.sendMessage(recorderTabId, { type: "TOGGLE_MIC_RUNTIME", enabled: msg.enabled }).catch(() => {});
+    }
+  }
+
+  // FOCUS RECORDER TAB FOR MIC PERMISSION PROMPT
+  if (msg.type === "FOCUS_RECORDER_TAB") {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0] && tabs[0].id) {
+        lastActiveTabId = tabs[0].id;
+      }
+      if (recorderTabId) {
+        chrome.tabs.update(recorderTabId, { active: true });
+      }
+    });
+  }
+
+  // RESTORE FOCUS TO PREVIOUS TAB ON MIC PERMISSION RESPONSE
+  if (msg.type === "MIC_TOGGLE_SUCCESS" || msg.type === "MIC_TOGGLE_FAILED") {
+    if (lastActiveTabId) {
+      chrome.tabs.update(lastActiveTabId, { active: true });
+      lastActiveTabId = null;
+    }
+  }
+
   return true;
 });
 

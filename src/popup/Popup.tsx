@@ -191,13 +191,13 @@ export default function Popup() {
       )}
       {/* Settings Modal Overlay */}
       {showSettings && (
-        <SettingsModal onClose={() => setShowSettings(false)} />
+        <SettingsModal onClose={() => setShowSettings(false)} isRecording={isRecording} />
       )}
     </div>
   );
 }
 
-function SettingsModal({ onClose }: { onClose: () => void }) {
+function SettingsModal({ onClose, isRecording }: { onClose: () => void, isRecording: boolean }) {
   const [autoDownload, setAutoDownload] = useState(true);
   const [recordMic, setRecordMic] = useState(false);
   const [expandEditBar, setExpandEditBar] = useState(false);
@@ -236,6 +236,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         if (message.showClickRipple !== undefined) setShowClickRipple(message.showClickRipple);
         if (message.showCaptureBtn !== undefined) setShowCaptureBtn(message.showCaptureBtn);
         if (message.showDrawingBar !== undefined) setShowDrawingBar(message.showDrawingBar);
+      } else if (message.type === "MIC_STATUS_CHANGED") {
+        setRecordMic(!!message.enabled);
       }
     };
     chrome.runtime.onMessage.addListener(handleMessage);
@@ -253,7 +255,11 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const handleRecordMicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
     setRecordMic(checked);
-    chrome.storage.local.set({ recordMic: checked });
+    chrome.storage.local.set({ recordMic: checked }, () => {
+      if (isRecording) {
+        chrome.runtime.sendMessage({ type: "TOGGLE_MIC_RUNTIME", enabled: checked }).catch(() => {});
+      }
+    });
   };
 
   const updateSetting = (key: string, value: any) => {
@@ -318,6 +324,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const tools = [
     { id: 'highlight', label: 'Highlight Halo' },
     { id: 'ripple', label: 'Click Ripple' },
+    { id: 'mic', label: 'Microphone Toggle' },
     { id: 'pencil', label: 'Pencil / Freehand' },
     { id: 'highlighter', label: 'Highlighter' },
     { id: 'square', label: 'Square Shape' },
@@ -332,6 +339,29 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     { id: 'undo', label: 'Undo Action' },
     { id: 'redo', label: 'Redo Action' }
   ];
+
+  const allToolsVisible = tools.every(t => visibility[t.id] !== false);
+
+  const handleToggleAllTools = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    const nextVisibility: Record<string, boolean> = {};
+    tools.forEach(t => {
+      nextVisibility[t.id] = checked;
+    });
+    setVisibility(nextVisibility);
+    chrome.storage.local.set({ toolVisibility: nextVisibility }, () => {
+      chrome.tabs.query({}, (tabs) => {
+        tabs.forEach((tab) => {
+          if (tab.id !== undefined) {
+            chrome.tabs.sendMessage(tab.id, {
+              type: "ALL_TOOLS_VISIBILITY_CHANGED",
+              visibility: nextVisibility
+            }).catch(() => {});
+          }
+        });
+      });
+    });
+  };
 
   return (
     <div id="settings-modal" className="modal-overlay">
@@ -444,6 +474,19 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
             
             {expandEditBar && (
               <div className="accordion-content">
+                {/* Master Toggle All Buttons */}
+                <div className="setting-row" style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '10px', marginBottom: '10px' }}>
+                  <span className="setting-label" style={{ fontWeight: '600', color: '#f3f4f6' }}>Toggle All Buttons</span>
+                  <label className="switch-toggle">
+                    <input 
+                      type="checkbox" 
+                      checked={allToolsVisible} 
+                      onChange={handleToggleAllTools} 
+                    />
+                    <span className="slider-toggle"></span>
+                  </label>
+                </div>
+
                 {tools.map(tool => {
                   const isVisible = visibility[tool.id] !== false;
                   return (

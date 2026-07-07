@@ -46,11 +46,14 @@ export default function Recorder() {
   };
 
   useEffect(() => {
-    async function startRecording() {
-      let displayStream: MediaStream | null = null;
-      let micStream: MediaStream | null = null;
-      let audioCtx: AudioContext | null = null;
+    let displayStream: MediaStream | null = null;
+    let micStream: MediaStream | null = null;
+    let audioCtx: AudioContext | null = null;
+    let destination: MediaStreamAudioDestinationNode | null = null;
+    let micSourceNode: MediaStreamAudioSourceNode | null = null;
+    let micGainNode: GainNode | null = null;
 
+    async function startRecording() {
       try {
         const settings = await new Promise<{ recordMic?: boolean }>((resolve) => {
           chrome.storage.local.get({ recordMic: false }, (res) => {
@@ -58,6 +61,16 @@ export default function Recorder() {
           });
         });
 
+        // Setup AudioContext & destination node to allow dynamic audio routing/mixing
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        audioCtx = new AudioContextClass();
+        destination = audioCtx.createMediaStreamDestination();
+
+        // Create micGainNode to safely and reliably control microphone volume (muting)
+        micGainNode = audioCtx.createGain();
+        micGainNode.connect(destination);
+
+        // If settings recordMic is enabled at start, fetch user mic stream immediately (while focused on recorder tab)
         if (settings.recordMic) {
           try {
             micStream = await navigator.mediaDevices.getUserMedia({
@@ -66,8 +79,11 @@ export default function Recorder() {
                 noiseSuppression: true,
               },
             });
+            micSourceNode = audioCtx.createMediaStreamSource(micStream);
+            micSourceNode.connect(micGainNode);
+            micGainNode.gain.setValueAtTime(1, audioCtx.currentTime);
           } catch (micErr) {
-            console.warn("Microphone access declined or unavailable, recording screen only:", micErr);
+            console.warn("Microphone access declined or unavailable at start:", micErr);
           }
         }
 
@@ -76,45 +92,27 @@ export default function Recorder() {
           audio: true,
         });
 
-        let finalStream = displayStream;
-
-        if (settings.recordMic && micStream) {
-          const displayAudioTracks = displayStream.getAudioTracks();
-          if (displayAudioTracks.length > 0) {
-            try {
-              const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-              audioCtx = new AudioContextClass();
-              const destination = audioCtx.createMediaStreamDestination();
-
-              const displaySource = audioCtx.createMediaStreamSource(displayStream);
-              displaySource.connect(destination);
-
-              const micSource = audioCtx.createMediaStreamSource(micStream);
-              micSource.connect(destination);
-
-              if (audioCtx.state === 'suspended') {
-                await audioCtx.resume();
-              }
-
-              const videoTrack = displayStream.getVideoTracks()[0];
-              const mixedAudioTrack = destination.stream.getAudioTracks()[0];
-              
-              finalStream = new MediaStream([videoTrack]);
-              if (mixedAudioTrack) {
-                finalStream.addTrack(mixedAudioTrack);
-              }
-            } catch (mixErr) {
-              console.error("Failed to mix audio tracks, using displayStream only:", mixErr);
-              finalStream = displayStream;
-            }
-          } else {
-            const videoTrack = displayStream.getVideoTracks()[0];
-            const micAudioTrack = micStream.getAudioTracks()[0];
-            finalStream = new MediaStream([videoTrack]);
-            if (micAudioTrack) {
-              finalStream.addTrack(micAudioTrack);
-            }
+        // Connect display audio source if system/tab audio was shared
+        const displayAudioTracks = displayStream.getAudioTracks();
+        if (displayAudioTracks.length > 0) {
+          try {
+            const displaySource = audioCtx.createMediaStreamSource(displayStream);
+            displaySource.connect(destination);
+          } catch (e) {
+            console.error("Failed to connect display audio source:", e);
           }
+        }
+
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
+
+        const videoTrack = displayStream.getVideoTracks()[0];
+        const mixedAudioTrack = destination.stream.getAudioTracks()[0];
+        
+        let finalStream = new MediaStream([videoTrack]);
+        if (mixedAudioTrack) {
+          finalStream.addTrack(mixedAudioTrack);
         }
 
         const mediaRecorder = new MediaRecorder(finalStream, {
@@ -213,6 +211,136 @@ export default function Recorder() {
     chrome.downloads.onChanged.addListener(handleDownloadChanged);
 
     // LISTEN FOR MESSAGES
+    async function handleToggleMicRuntime(enabled: boolean) {
+      if (!audioCtx || !destination) return;
+
+      if (enabled) {
+        if (micStream) {
+          micStream.getAudioTracks().forEach(t => t.enabled = true);
+          if (micGainNode) {
+            micGainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+          }
+          chrome.storage.local.set({ recordMic: true });
+          // Broadcast status changed to true
+          chrome.runtime.sendMessage({ type: "MIC_STATUS_CHANGED", enabled: true }).catch(() => {});
+          chrome.tabs.query({}, (tabs) => {
+            tabs.forEach((tab) => {
+              if (tab.id !== undefined) {
+                chrome.tabs.sendMessage(tab.id, {
+                  type: "MIC_STATUS_CHANGED",
+                  enabled: true
+                }).catch(() => {});
+              }
+            });
+          });
+        } else {
+          try {
+            // Check permission state first
+            let permissionGranted = false;
+            try {
+              const perm = await navigator.permissions.query({ name: 'microphone' as any });
+              permissionGranted = perm.state === 'granted';
+            } catch (e) {
+              console.warn("Could not query mic permission:", e);
+            }
+
+            if (!permissionGranted) {
+              // Notify content script that mic permission prompt is about to open (so it shows a warning/popup)
+              chrome.tabs.query({}, (tabs) => {
+                tabs.forEach((tab) => {
+                  if (tab.id !== undefined) {
+                    chrome.tabs.sendMessage(tab.id, {
+                      type: "MIC_PERMISSION_REQUESTED"
+                    }).catch(() => {});
+                  }
+                });
+              });
+
+              // Ask background script to focus the recorder tab to show Chrome's permission prompt
+              chrome.runtime.sendMessage({ type: "FOCUS_RECORDER_TAB" }).catch(() => {});
+            }
+
+            micStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+              },
+            });
+            if (audioCtx.state === 'suspended') {
+              await audioCtx.resume();
+            }
+            micSourceNode = audioCtx.createMediaStreamSource(micStream);
+            if (micGainNode) {
+              micSourceNode.connect(micGainNode);
+              micGainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+            } else {
+              micSourceNode.connect(destination);
+            }
+
+            // Successfully enabled! Restore focus to the original tab
+            chrome.runtime.sendMessage({ type: "MIC_TOGGLE_SUCCESS" }).catch(() => {});
+
+            // Broadcast status changed to true
+            chrome.storage.local.set({ recordMic: true });
+            chrome.runtime.sendMessage({ type: "MIC_STATUS_CHANGED", enabled: true }).catch(() => {});
+            chrome.tabs.query({}, (tabs) => {
+              tabs.forEach((tab) => {
+                if (tab.id !== undefined) {
+                  chrome.tabs.sendMessage(tab.id, {
+                    type: "MIC_STATUS_CHANGED",
+                    enabled: true
+                  }).catch(() => {});
+                }
+              });
+            });
+          } catch (micErr: any) {
+            console.error("Failed to start microphone at runtime:", micErr);
+            // Failed/denied -> Restore focus to original tab
+            chrome.runtime.sendMessage({ type: "MIC_TOGGLE_FAILED", error: micErr.message || "Permission denied" }).catch(() => {});
+
+            // Broadcast status changed to false
+            chrome.storage.local.set({ recordMic: false });
+            chrome.runtime.sendMessage({
+              type: "MIC_STATUS_CHANGED",
+              enabled: false,
+              error: micErr.message || "Permission denied"
+            }).catch(() => {});
+            chrome.tabs.query({}, (tabs) => {
+              tabs.forEach((tab) => {
+                if (tab.id !== undefined) {
+                  chrome.tabs.sendMessage(tab.id, {
+                    type: "MIC_STATUS_CHANGED",
+                    enabled: false,
+                    error: micErr.message || "Permission denied"
+                  }).catch(() => {});
+                }
+              });
+            });
+          }
+        }
+      } else {
+        if (micStream) {
+          micStream.getAudioTracks().forEach(t => t.enabled = false);
+        }
+        if (micGainNode) {
+          micGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+        }
+        // Broadcast status changed to false
+        chrome.storage.local.set({ recordMic: false });
+        chrome.runtime.sendMessage({ type: "MIC_STATUS_CHANGED", enabled: false }).catch(() => {});
+        chrome.tabs.query({}, (tabs) => {
+          tabs.forEach((tab) => {
+            if (tab.id !== undefined) {
+              chrome.tabs.sendMessage(tab.id, {
+                type: "MIC_STATUS_CHANGED",
+                enabled: false
+              }).catch(() => {});
+            }
+          });
+        });
+      }
+    }
+
     const handleMessage = (msg: any) => {
       if (msg.type === "STOP") {
         if (!mediaRecorderRef.current || mediaRecorderRef.current.state === "inactive") return;
@@ -222,6 +350,10 @@ export default function Recorder() {
       if (msg.type === "DOWNLOAD") {
         if (!recordingStoppedRef.current || !recordedChunksRef.current.length) return;
         triggerDownloadRef.current();
+      }
+
+      if (msg.type === "TOGGLE_MIC_RUNTIME") {
+        handleToggleMicRuntime(msg.enabled);
       }
     };
 

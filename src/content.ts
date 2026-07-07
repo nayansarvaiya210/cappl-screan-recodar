@@ -18,8 +18,14 @@
       return;
     } else {
       // Old context is dead/invalidated. Clean up old elements and run fresh.
-      const oldHost = document.getElementById('screen-recorder-overlay-host');
-      if (oldHost) oldHost.remove();
+      const oldOverlayHost = document.getElementById('screen-recorder-overlay-host');
+      if (oldOverlayHost) {
+        try { oldOverlayHost.remove(); } catch (e) {}
+      }
+      const oldDrawingHost = document.getElementById('screen-recorder-drawing-host');
+      if (oldDrawingHost) {
+        try { oldDrawingHost.remove(); } catch (e) {}
+      }
       window.hasScreenRecorderOverlay = false;
       window.srInitOverlay = undefined;
       window.srRemoveOverlay = undefined;
@@ -37,10 +43,28 @@
   };
 
   let isRecording = false;
+  let isInitializing = false;
+  let isMicActive = false;
   let showHighlight = true;
   let showClickRipple = true;
   let showCaptureBtn = true;
   let showDrawingBar = true;
+
+  function getMicIconHtml(active) {
+    if (active) {
+      return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+        </svg>
+      `;
+    } else {
+      return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18.63 16.51L15.6 13.48c.27-.47.4-.99.4-1.52v-1.5M12 18.75v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3zM3 3l18 18" />
+        </svg>
+      `;
+    }
+  }
   let currentTool = 'none'; // 'none', 'pencil', 'highlighter', 'eraser', 'square', 'circle', 'line', 'arrow', 'laser', 'text', 'magnifier'
   let isDrawingMode = false;
   let currentColor = '#eab308'; // Default yellow
@@ -80,10 +104,98 @@
     return brushSize;
   }
 
+  function showMicPermissionModal() {
+    if (!shadowRoot) return;
+    let modal = shadowRoot.getElementById('sr-mic-permission-modal');
+    if (modal) return; // Already exists
+
+    modal = document.createElement('div');
+    modal.id = 'sr-mic-permission-modal';
+    modal.style.position = 'fixed';
+    modal.style.top = '50%';
+    modal.style.left = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+    modal.style.backgroundColor = 'rgba(15, 23, 42, 0.92)';
+    modal.style.border = '1px solid rgba(255, 255, 255, 0.15)';
+    modal.style.borderRadius = '16px';
+    modal.style.padding = '24px 32px';
+    modal.style.color = '#f8fafc';
+    modal.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+    modal.style.fontSize = '14px';
+    modal.style.lineHeight = '1.6';
+    modal.style.textAlign = 'center';
+    modal.style.zIndex = '2147483647';
+    modal.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)';
+    modal.style.pointerEvents = 'auto';
+    modal.style.maxWidth = '320px';
+    modal.style.backdropFilter = 'blur(12px)';
+
+    modal.innerHTML = `
+      <div style="margin-bottom: 16px;">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 48px; height: 48px; color: #3b82f6; margin: 0 auto; animation: pulse 2s infinite;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+        </svg>
+      </div>
+      <h3 style="font-size: 18px; font-weight: 600; margin: 0 0 8px 0; color: #ffffff;">Microphone Access</h3>
+      <p style="margin: 0 0 16px 0; color: #94a3b8; font-size: 13px;">
+        Please click <strong>Allow</strong> in the chrome permission window that just opened in the recording tab.
+      </p>
+      <div style="font-size: 11px; color: #3b82f6; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;">
+        Waiting for approval...
+      </div>
+    `;
+
+    // Add keyframe animation if not already injected
+    if (!shadowRoot.getElementById('sr-mic-animation-style')) {
+      const animStyle = document.createElement('style');
+      animStyle.id = 'sr-mic-animation-style';
+      animStyle.textContent = `
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: .5; transform: scale(1.05); }
+        }
+      `;
+      shadowRoot.appendChild(animStyle);
+    }
+
+    shadowRoot.appendChild(modal);
+  }
+
+  function hideMicPermissionModal() {
+    if (!shadowRoot) return;
+    const modal = shadowRoot.getElementById('sr-mic-permission-modal');
+    if (modal) {
+      modal.remove();
+    }
+  }
+
   function initOverlay() {
-    if (overlayHost) return; // Already initialized
+    if (overlayHost || isInitializing) return; // Already initialized or initializing
+    isInitializing = true;
+
+    // Clean up any stray elements in the DOM to prevent duplicates
+    const strayDrawingHost = document.getElementById('screen-recorder-drawing-host');
+    if (strayDrawingHost) {
+      try { strayDrawingHost.remove(); } catch (e) {}
+    }
+    const strayOverlayHost = document.getElementById('screen-recorder-overlay-host');
+    if (strayOverlayHost) {
+      try { strayOverlayHost.remove(); } catch (e) {}
+    }
 
     loadSettingsFromStorage(() => {
+      isInitializing = false;
+
+      // Double check if recording was stopped while loading settings
+      if (!isRecording) {
+        return;
+      }
+
+      // Double check overlayHost was not created by another call in the meantime
+      if (overlayHost) {
+        return;
+      }
+
       // Create drawingHost for absolute elements (drawing canvas)
       drawingHost = document.createElement('div');
       drawingHost.id = 'screen-recorder-drawing-host';
@@ -160,6 +272,7 @@
   }
 
   function removeOverlay() {
+    hideMicPermissionModal();
     if (animationFrameId) {
       cancelAnimationFrame(animationFrameId);
       animationFrameId = null;
@@ -201,6 +314,8 @@
     currentTool = 'none';
     isDrawingMode = false;
     isDrawing = false;
+    isInitializing = false;
+    isMicActive = false;
   }
 
   // Expose functions for subsequent script runs
@@ -215,7 +330,8 @@
       showDrawingBar: true,
       currentColor: '#eab308',
       brushSize: 8,
-      currentTool: 'none'
+      currentTool: 'none',
+      recordMic: false
     };
 
     try {
@@ -229,6 +345,7 @@
           currentColor = data.currentColor || '#eab308';
           brushSize = data.brushSize || 8;
           currentTool = data.currentTool || 'none';
+          isMicActive = !!data.recordMic;
           console.log("[SR Overlay] Settings loaded from storage:", data);
           if (callback) callback();
         });
@@ -246,6 +363,7 @@
     currentColor = defaults.currentColor;
     brushSize = defaults.brushSize;
     currentTool = defaults.currentTool;
+    isMicActive = defaults.recordMic;
     if (callback) callback();
   }
 
@@ -1223,6 +1341,18 @@
     });
     toolbarEl.appendChild(btnRipple);
 
+    // Microphone Toggle
+    const btnMic = document.createElement('button');
+    btnMic.className = 'sr-btn' + (isMicActive ? ' sr-active' : '');
+    btnMic.id = 'sr-btn-mic';
+    btnMic.title = 'Toggle Microphone';
+    btnMic.dataset.tooltip = 'Microphone';
+    btnMic.innerHTML = getMicIconHtml(isMicActive);
+    btnMic.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: "TOGGLE_MIC_RUNTIME", enabled: !isMicActive }).catch(() => {});
+    });
+    toolbarEl.appendChild(btnMic);
+
     const divTools = document.createElement('div');
     divTools.className = 'sr-divider';
     toolbarEl.appendChild(divTools);
@@ -1569,22 +1699,6 @@
     `;
     toolbarEl.appendChild(btnCollapse);
 
-    // Close / Hide Drawing Bar Button
-    const btnCloseBar = document.createElement('button');
-    btnCloseBar.className = 'sr-btn sr-btn-close-bar';
-    btnCloseBar.id = 'sr-btn-close-bar';
-    btnCloseBar.title = 'Hide drawing bar completely';
-    btnCloseBar.dataset.tooltip = 'Hide Bar';
-    btnCloseBar.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-      </svg>
-    `;
-    btnCloseBar.addEventListener('click', () => {
-      saveAndBroadcastSettings({ showDrawingBar: false });
-      updateDrawingBarVisibility(false);
-    });
-    toolbarEl.appendChild(btnCloseBar);
 
     // Minimized Floating Trigger Button
     minimizedTrigger = document.createElement('button');
@@ -1721,7 +1835,7 @@
   }
 
   function applyInitialToolVisibility() {
-    const tools = ['highlight', 'ripple', 'pencil', 'highlighter', 'square', 'circle', 'line', 'arrow', 'laser', 'magnifier', 'text', 'eraser', 'clear', 'undo', 'redo'];
+    const tools = ['highlight', 'ripple', 'mic', 'pencil', 'highlighter', 'square', 'circle', 'line', 'arrow', 'laser', 'magnifier', 'text', 'eraser', 'clear', 'undo', 'redo'];
     try {
       if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.get({ toolVisibility: {} }, (res) => {
@@ -2083,6 +2197,34 @@
         } else if (message.type === "TOOL_VISIBILITY_CHANGED") {
           if (typeof updateToolbarButtonVisibility === 'function') {
             updateToolbarButtonVisibility(message.toolId, message.isVisible);
+          }
+        } else if (message.type === "ALL_TOOLS_VISIBILITY_CHANGED") {
+          if (typeof updateToolbarButtonVisibility === 'function') {
+            Object.keys(message.visibility).forEach(toolId => {
+              updateToolbarButtonVisibility(toolId, message.visibility[toolId]);
+            });
+          }
+        } else if (message.type === "MIC_TOGGLE_FAILED") {
+          isMicActive = false;
+          hideMicPermissionModal();
+          const btnMic = shadowRoot ? shadowRoot.getElementById('sr-btn-mic') : null;
+          if (btnMic) {
+            btnMic.classList.remove('sr-active');
+            btnMic.innerHTML = getMicIconHtml(false);
+          }
+          alert("Microphone access failed: " + (message.error || "Permission denied"));
+        } else if (message.type === "MIC_PERMISSION_REQUESTED") {
+          showMicPermissionModal();
+        } else if (message.type === "MIC_STATUS_CHANGED") {
+          isMicActive = !!message.enabled;
+          hideMicPermissionModal();
+          const btnMic = shadowRoot ? shadowRoot.getElementById('sr-btn-mic') : null;
+          if (btnMic) {
+            btnMic.classList.toggle('sr-active', isMicActive);
+            btnMic.innerHTML = getMicIconHtml(isMicActive);
+          }
+          if (!isMicActive && message.error) {
+            alert("Microphone access failed: " + message.error);
           }
         } else if (message.type === "SETTINGS_CHANGED") {
           if (message.showHighlight !== undefined) {
