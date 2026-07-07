@@ -281,6 +281,7 @@
     window.removeEventListener('resize', resizeCanvases);
     document.removeEventListener('mousemove', handleMouseMoveGlobal);
     document.removeEventListener('mousedown', handleMouseDownGlobal);
+    document.removeEventListener('keydown', handleKeyDownGlobal);
 
     if (resizeObserver) {
       resizeObserver.disconnect();
@@ -621,6 +622,7 @@
     window.addEventListener('resize', resizeCanvases);
     document.addEventListener('mousemove', handleMouseMoveGlobal);
     document.addEventListener('mousedown', handleMouseDownGlobal);
+    document.addEventListener('keydown', handleKeyDownGlobal);
 
     // Canvas drawing mouse events
     interactionCanvas.addEventListener('mousedown', startDrawing);
@@ -698,6 +700,81 @@
 
     if (currentTool === 'magnifier') {
       setTimeout(refreshMagnifierImage, 100);
+    }
+  }
+
+  function handleKeyDownGlobal(e) {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
+      return;
+    }
+
+    const key = e.key.toLowerCase();
+
+    // Undo / Redo
+    if (key === 'z' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      if (e.shiftKey) {
+        executeRedo();
+      } else {
+        executeUndo();
+      }
+      return;
+    }
+    if (key === 'y' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      executeRedo();
+      return;
+    }
+
+    // Toggle Pen Tool (D)
+    if (key === 'd') {
+      e.preventDefault();
+      selectTool(currentTool === 'pencil' ? 'none' : 'pencil');
+    }
+    // Toggle Highlighter (H)
+    else if (key === 'h') {
+      e.preventDefault();
+      selectTool(currentTool === 'highlighter' ? 'none' : 'highlighter');
+    }
+    // Toggle Eraser (E)
+    else if (key === 'e') {
+      e.preventDefault();
+      selectTool(currentTool === 'eraser' ? 'none' : 'eraser');
+    }
+    // Clear All (C)
+    else if (key === 'c') {
+      e.preventDefault();
+      executeClear();
+    }
+    // Select 1st Color (1) - Yellow
+    else if (key === '1') {
+      e.preventDefault();
+      currentColor = '#eab308';
+      saveAndBroadcastSettings({ currentColor });
+      updateToolbarUI();
+    }
+    // Select 2nd Color (2) - Red
+    else if (key === '2') {
+      e.preventDefault();
+      currentColor = '#ef4444';
+      saveAndBroadcastSettings({ currentColor });
+      updateToolbarUI();
+    }
+    // Select 3rd Color (3) - Blue
+    else if (key === '3') {
+      e.preventDefault();
+      currentColor = '#3b82f6';
+      saveAndBroadcastSettings({ currentColor });
+      updateToolbarUI();
+    }
+    // Stop recording: Ctrl+Shift+S or Cmd+Shift+S
+    else if (key === 's' && (e.ctrlKey || e.metaKey) && e.shiftKey) {
+      e.preventDefault();
+      try {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({ type: "STOP_RECORDING" });
+        }
+      } catch (err) {}
     }
   }
 

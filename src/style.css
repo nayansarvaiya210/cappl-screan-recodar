@@ -355,12 +355,14 @@ body.help-active .popup-container {
   line-height: 1.4;
 }
 
-/* Settings Toggle & Accordion Styles */
-body.settings-active {
+/* Settings & Help Toggle & Accordion Styles */
+body.settings-active,
+body.help-active {
   height: 480px;
 }
 
-body.settings-active .popup-container {
+body.settings-active .popup-container,
+body.help-active .popup-container {
   min-height: 440px;
 }
 
