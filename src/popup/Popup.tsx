@@ -199,6 +199,7 @@ export default function Popup() {
 
 function SettingsModal({ onClose }: { onClose: () => void }) {
   const [autoDownload, setAutoDownload] = useState(true);
+  const [recordMic, setRecordMic] = useState(false);
   const [expandEditBar, setExpandEditBar] = useState(false);
   const [visibility, setVisibility] = useState<Record<string, boolean>>({});
 
@@ -216,7 +217,8 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       showHighlight: true,
       showClickRipple: true,
       showCaptureBtn: true,
-      showDrawingBar: true
+      showDrawingBar: true,
+      recordMic: false
     }, (res) => {
       setAutoDownload(res.autoDownload !== false);
       setVisibility(res.toolVisibility || {});
@@ -224,6 +226,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       setShowClickRipple(res.showClickRipple !== false);
       setShowCaptureBtn(res.showCaptureBtn !== false);
       setShowDrawingBar(res.showDrawingBar !== false);
+      setRecordMic(res.recordMic || false);
     });
 
     // Listen for live updates from page floating toolbar
@@ -245,6 +248,12 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     const checked = e.target.checked;
     setAutoDownload(checked);
     chrome.storage.local.set({ autoDownload: checked });
+  };
+
+  const handleRecordMicChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    setRecordMic(checked);
+    chrome.storage.local.set({ recordMic: checked });
   };
 
   const updateSetting = (key: string, value: any) => {
@@ -344,6 +353,19 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 type="checkbox" 
                 checked={autoDownload} 
                 onChange={handleAutoDownloadChange} 
+              />
+              <span className="slider-toggle"></span>
+            </label>
+          </div>
+
+          {/* Record Microphone Setting */}
+          <div className="setting-row">
+            <span className="setting-label">Record Microphone</span>
+            <label className="switch-toggle">
+              <input 
+                type="checkbox" 
+                checked={recordMic} 
+                onChange={handleRecordMicChange} 
               />
               <span className="slider-toggle"></span>
             </label>

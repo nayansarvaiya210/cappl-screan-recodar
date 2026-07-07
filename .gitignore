@@ -36,6 +36,9 @@ coverage/
 .vite/
 *.tsbuildinfo
 
+# Chrome profiles
+scratch-chrome-profile/
+
 # Editor directories and files
 .vscode/
 .idea/

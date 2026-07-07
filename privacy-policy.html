@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Cappl Screen Recorder & Drawing Tools</title>
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --primary-color: #a78bfa;
+      --secondary-color: #22d3ee;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      line-height: 1.6;
+      padding: 40px 20px;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .container {
+      max-width: 800px;
+      width: 100%;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 48px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 50px rgba(167, 139, 250, 0.1);
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 30px;
+    }
+
+    .logo-container {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+      margin-bottom: 16px;
+      box-shadow: 0 8px 20px rgba(167, 139, 250, 0.3);
+    }
+
+    .logo-container svg {
+      width: 32px;
+      height: 32px;
+      color: #0f172a;
+    }
+
+    h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2.2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      font-weight: 500;
+    }
+
+    section {
+      margin-bottom: 32px;
+    }
+
+    h2 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: var(--secondary-color);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    p {
+      color: #cbd5e1;
+      font-size: 1rem;
+      margin-bottom: 16px;
+    }
+
+    ul {
+      list-style-type: none;
+      padding-left: 0;
+      margin-bottom: 16px;
+    }
+
+    li {
+      position: relative;
+      padding-left: 24px;
+      margin-bottom: 8px;
+      color: #cbd5e1;
+    }
+
+    li::before {
+      content: "✦";
+      position: absolute;
+      left: 0;
+      color: var(--primary-color);
+    }
+
+    .highlight-box {
+      background: rgba(167, 139, 250, 0.05);
+      border-left: 4px solid var(--primary-color);
+      padding: 16px 20px;
+      border-radius: 0 12px 12px 0;
+      margin-bottom: 24px;
+    }
+
+    .highlight-box p {
+      margin-bottom: 0;
+      font-weight: 500;
+      color: #e2e8f0;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 40px;
+      border-top: 1px solid var(--border-color);
+      padding-top: 30px;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    footer a {
+      color: var(--secondary-color);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    footer a:hover {
+      color: var(--primary-color);
+      text-decoration: underline;
+    }
+
+    @media (max-width: 640px) {
+      .container {
+        padding: 24px;
+      }
+      h1 {
+        font-size: 1.8rem;
+      }
+      h2 {
+        font-size: 1.25rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="logo-container">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 20.25h12m-7.5-3v3m3-3v3m-10.125-3h14.25c.621 0 1.125-.504 1.125-1.125V4.875c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125z" />
+        </svg>
+      </div>
+      <h1>Cappl - Screen Recorder & Drawing Tools</h1>
+      <div class="subtitle">Privacy Policy • Last Updated: July 2026</div>
+    </header>
+
+    <main>
+      <section>
+        <h2>1. Commitment to Privacy</h2>
+        <p>
+          We take your privacy very seriously. <strong>Cappl - Screen Recorder & Drawing Tools</strong> is designed to run entirely locally in your Chrome browser. We do not gather, store, or transmit any personal data, screen recordings, audio files, or setting preferences to external servers.
+        </p>
+      </section>
+
+      <section>
+        <h2>2. Data Collection and Usage</h2>
+        <div class="highlight-box">
+          <p>This extension operates with a zero-data-collection policy. All actions, drawings, and files are processed strictly on your computer.</p>
+        </div>
+        <p>Here is how our extension uses the browser permissions we request:</p>
+        <ul>
+          <li><strong>Screen Recording (Media Stream APIs):</strong> Used strictly to capture your designated screen, window, or tab when you click "Start Recording." The recorded video is saved entirely in local browser memory and downloaded directly to your local file system.</li>
+          <li><strong>Microphone Audio Access:</strong> Used only when you toggle on microphone recording. Audio is merged locally with the video feed and is never recorded or stored separately.</li>
+          <li><strong>Storage Permission (chrome.storage.local):</strong> Used solely to persist your local drawing toolbar settings (such as selected brush color, brush size, and tool visibility) so they are kept consistent for your next session.</li>
+          <li><strong>ActiveTab Permission (chrome.tabs.captureVisibleTab):</strong> Used to take a static visual capture of the active page to power the screen magnifier lens and screen capture tool upon your direct request.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>3. Data Transmission & Security</h2>
+        <p>
+          Since <strong>Cappl</strong> does not communicate with external APIs, databases, or cloud servers, it is physically impossible for your data to be leaked, shared, or transmitted. Your recordings remain 100% confidential and under your complete control at all times.
+        </p>
+      </section>
+
+      <section>
+        <h2>4. Changes to This Policy</h2>
+        <p>
+          We may update this Privacy Policy from time to time. Any changes will be reflected with a revised "Last Updated" date at the top of this page.
+        </p>
+      </section>
+
+      <section>
+        <h2>5. Contact Us</h2>
+        <p>
+          If you have any questions or suggestions regarding our Privacy Policy, please feel free to reach out to us through the developer contact details provided in the Chrome Web Store.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2026 Cappl Screen Recorder. All rights reserved.</p>
+    </footer>
+  </div>
+
+</body>
+</html>

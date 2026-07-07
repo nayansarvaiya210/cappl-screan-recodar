@@ -54,6 +54,8 @@
   let lastX = 0;
   let lastY = 0;
   let animationFrameId = null;
+  let resizeObserver = null;
+  let magnifierMoveTimeout = null;
 
   // History stacks for Undo / Redo
   let undoStack = [];
@@ -62,6 +64,8 @@
 
   let shadowRoot = null;
   let overlayHost = null;
+  let drawingHost = null;
+  let drawingShadowRoot = null;
   let drawingCanvas = null;
   let interactionCanvas = null;
   let drawingCtx = null;
@@ -80,7 +84,22 @@
     if (overlayHost) return; // Already initialized
 
     loadSettingsFromStorage(() => {
-      // Create the host element for Shadow DOM
+      // Create drawingHost for absolute elements (drawing canvas)
+      drawingHost = document.createElement('div');
+      drawingHost.id = 'screen-recorder-drawing-host';
+      drawingHost.style.position = 'absolute';
+      drawingHost.style.top = '0';
+      drawingHost.style.left = '0';
+      drawingHost.style.width = '100%';
+      drawingHost.style.height = '100%';
+      drawingHost.style.zIndex = '2147483646';
+      drawingHost.style.pointerEvents = 'none';
+      drawingHost.style.overflow = 'visible';
+
+      drawingShadowRoot = drawingHost.attachShadow({ mode: 'open' });
+      document.body.appendChild(drawingHost);
+
+      // Create overlayHost for fixed elements (interaction canvas, toolbar, minimized trigger)
       overlayHost = document.createElement('div');
       overlayHost.id = 'screen-recorder-overlay-host';
       overlayHost.style.position = 'fixed';
@@ -104,10 +123,17 @@
       container.className = 'sr-overlay-container';
       shadowRoot.appendChild(container);
 
-      // Create Drawing Canvas
+      // Create Drawing Canvas inside drawingShadowRoot
       drawingCanvas = document.createElement('canvas');
       drawingCanvas.className = 'sr-canvas sr-drawing-canvas';
-      container.appendChild(drawingCanvas);
+      drawingCanvas.style.position = 'absolute';
+      drawingCanvas.style.top = '0';
+      drawingCanvas.style.left = '0';
+      drawingCanvas.style.margin = '0';
+      drawingCanvas.style.padding = '0';
+      drawingCanvas.style.pointerEvents = 'none';
+      drawingCanvas.style.zIndex = '1';
+      drawingShadowRoot.appendChild(drawingCanvas);
       drawingCtx = drawingCanvas.getContext('2d');
 
       // Create Interaction Canvas (Mouse Highlight, Ripples)
@@ -143,10 +169,21 @@
     document.removeEventListener('mousemove', handleMouseMoveGlobal);
     document.removeEventListener('mousedown', handleMouseDownGlobal);
 
-    if (overlayHost) {
-      if (shadowRoot) {
-        shadowRoot.querySelectorAll('.sr-text-input').forEach(el => el.remove());
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+      resizeObserver = null;
+    }
+
+    if (drawingHost) {
+      if (drawingShadowRoot) {
+        drawingShadowRoot.querySelectorAll('.sr-text-input').forEach(el => el.remove());
       }
+      drawingHost.remove();
+      drawingHost = null;
+      drawingShadowRoot = null;
+    }
+
+    if (overlayHost) {
       overlayHost.remove();
       overlayHost = null;
       shadowRoot = null;
@@ -160,6 +197,10 @@
       currentStroke = null;
       laserPoints = [];
     }
+
+    currentTool = 'none';
+    isDrawingMode = false;
+    isDrawing = false;
   }
 
   // Expose functions for subsequent script runs
@@ -167,7 +208,7 @@
   window.srRemoveOverlay = removeOverlay;
 
   function loadSettingsFromStorage(callback) {
-    chrome.storage.local.get({
+    const defaults = {
       showHighlight: true,
       showClickRipple: true,
       showCaptureBtn: true,
@@ -175,27 +216,55 @@
       currentColor: '#eab308',
       brushSize: 8,
       currentTool: 'none'
-    }, (res) => {
-      showHighlight = res.showHighlight !== false;
-      showClickRipple = res.showClickRipple !== false;
-      showCaptureBtn = res.showCaptureBtn !== false;
-      showDrawingBar = res.showDrawingBar !== false;
-      currentColor = res.currentColor || '#eab308';
-      brushSize = res.brushSize || 8;
-      currentTool = res.currentTool || 'none';
-      if (callback) callback();
-    });
+    };
+
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get(defaults, (res) => {
+          const data = res || defaults;
+          showHighlight = data.showHighlight !== false;
+          showClickRipple = data.showClickRipple !== false;
+          showCaptureBtn = data.showCaptureBtn !== false;
+          showDrawingBar = data.showDrawingBar !== false;
+          currentColor = data.currentColor || '#eab308';
+          brushSize = data.brushSize || 8;
+          currentTool = data.currentTool || 'none';
+          console.log("[SR Overlay] Settings loaded from storage:", data);
+          if (callback) callback();
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn("[SR Overlay] Failed to load settings from storage:", err);
+    }
+
+    // Fallback if chrome.storage is not available
+    showHighlight = defaults.showHighlight;
+    showClickRipple = defaults.showClickRipple;
+    showCaptureBtn = defaults.showCaptureBtn;
+    showDrawingBar = defaults.showDrawingBar;
+    currentColor = defaults.currentColor;
+    brushSize = defaults.brushSize;
+    currentTool = defaults.currentTool;
+    if (callback) callback();
   }
 
   function saveAndBroadcastSettings(settings) {
-    chrome.storage.local.set(settings, () => {
-      chrome.runtime.sendMessage({
-        type: "SETTINGS_CHANGED",
-        ...settings
-      }).catch(() => {
-        // Ignore if popup is closed
-      });
-    });
+    console.log("[SR Overlay] saveAndBroadcastSettings called:", settings);
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set(settings, () => {
+          if (chrome.runtime && chrome.runtime.sendMessage) {
+            chrome.runtime.sendMessage({
+              type: "SETTINGS_CHANGED",
+              ...settings
+            }).catch(() => {});
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("[SR Overlay] Failed to save/broadcast settings:", err);
+    }
   }
 
   function updateToolbarUI() {
@@ -405,10 +474,27 @@
   function resizeCanvases() {
     if (!drawingCanvas || !interactionCanvas) return;
 
-    drawingCanvas.width = window.innerWidth;
-    drawingCanvas.height = window.innerHeight;
     interactionCanvas.width = window.innerWidth;
     interactionCanvas.height = window.innerHeight;
+
+    const docWidth = Math.max(
+      document.documentElement.scrollWidth,
+      document.body.scrollWidth,
+      document.documentElement.clientWidth
+    );
+    const docHeight = Math.max(
+      document.documentElement.scrollHeight,
+      document.body.scrollHeight,
+      document.documentElement.clientHeight
+    );
+
+    drawingCanvas.width = docWidth;
+    drawingCanvas.height = docHeight;
+
+    if (drawingHost) {
+      drawingHost.style.width = docWidth + 'px';
+      drawingHost.style.height = docHeight + 'px';
+    }
 
     redrawCanvas();
   }
@@ -422,6 +508,14 @@
     interactionCanvas.addEventListener('mousedown', startDrawing);
     interactionCanvas.addEventListener('mousemove', draw);
     window.addEventListener('mouseup', stopDrawing);
+
+    // Watch for document size changes
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(() => {
+        resizeCanvases();
+      });
+      resizeObserver.observe(document.body);
+    }
 
     // Touch support for drawings
     interactionCanvas.addEventListener('touchstart', (e) => {
@@ -461,6 +555,14 @@
         time: Date.now()
       });
     }
+
+    if (currentTool === 'magnifier') {
+      // Debounce magnifier screenshot refresh when mouse stops moving
+      if (magnifierMoveTimeout) clearTimeout(magnifierMoveTimeout);
+      magnifierMoveTimeout = setTimeout(() => {
+        refreshMagnifierImage();
+      }, 150);
+    }
   }
 
   function handleMouseDownGlobal(e) {
@@ -475,6 +577,10 @@
       alpha: 0.8,
       speed: 1.5
     });
+
+    if (currentTool === 'magnifier') {
+      setTimeout(refreshMagnifierImage, 100);
+    }
   }
 
   function startDrawing(e) {
@@ -482,7 +588,7 @@
 
     if (currentTool === 'text') {
       isDrawing = false;
-      const existingInput = shadowRoot.querySelector('.sr-text-input');
+      const existingInput = drawingShadowRoot.querySelector('.sr-text-input');
       if (existingInput) {
         existingInput.blur();
       }
@@ -494,9 +600,9 @@
       input.type = 'text';
       input.className = 'sr-text-input';
       input.placeholder = 'Type text here...';
-      input.style.position = 'fixed';
-      input.style.left = `${clickX}px`;
-      input.style.top = `${clickY}px`;
+      input.style.position = 'absolute';
+      input.style.left = `${clickX + window.scrollX}px`;
+      input.style.top = `${clickY + window.scrollY}px`;
       
       const fontSize = Math.max(14, brushSize * 2 + 10);
       input.style.font = `600 ${fontSize}px 'Outfit', sans-serif`;
@@ -510,7 +616,7 @@
       input.style.pointerEvents = 'auto';
       input.style.minWidth = '150px';
 
-      shadowRoot.querySelector('.sr-overlay-container').appendChild(input);
+      drawingShadowRoot.appendChild(input);
 
       setTimeout(() => {
         input.focus();
@@ -524,8 +630,8 @@
             color: currentColor,
             size: brushSize,
             text: val,
-            x: clickX,
-            y: clickY
+            x: clickX + window.scrollX,
+            y: clickY + window.scrollY
           };
           undoStack.push(textStroke);
           redoStack = [];
@@ -553,8 +659,8 @@
     }
 
     isDrawing = true;
-    lastX = e.clientX;
-    lastY = e.clientY;
+    lastX = e.clientX + window.scrollX;
+    lastY = e.clientY + window.scrollY;
 
     currentStroke = {
       tool: currentTool,
@@ -591,8 +697,11 @@
   function draw(e) {
     if (!isDrawing || currentTool === 'none' || !currentStroke) return;
 
+    const pageX = e.clientX + window.scrollX;
+    const pageY = e.clientY + window.scrollY;
+
     if (currentTool === 'pencil' || currentTool === 'highlighter' || currentTool === 'eraser') {
-      currentStroke.points.push({ x: e.clientX, y: e.clientY });
+      currentStroke.points.push({ x: pageX, y: pageY });
 
       drawingCtx.lineWidth = getEffectiveBrushSize();
       drawingCtx.lineCap = 'round';
@@ -613,14 +722,14 @@
 
       drawingCtx.beginPath();
       drawingCtx.moveTo(lastX, lastY);
-      drawingCtx.lineTo(e.clientX, e.clientY);
+      drawingCtx.lineTo(pageX, pageY);
       drawingCtx.stroke();
 
-      lastX = e.clientX;
-      lastY = e.clientY;
+      lastX = pageX;
+      lastY = pageY;
     } else {
       // Shape / Line / Arrow preview updates
-      currentStroke.points[1] = { x: e.clientX, y: e.clientY };
+      currentStroke.points[1] = { x: pageX, y: pageY };
     }
   }
 
@@ -677,6 +786,8 @@
     if (isDrawing && currentStroke && ['square', 'circle', 'line', 'arrow'].includes(currentTool)) {
       const start = currentStroke.points[0];
       const end = currentStroke.points[1] || start;
+      const startViewport = { x: start.x - window.scrollX, y: start.y - window.scrollY };
+      const endViewport = { x: end.x - window.scrollX, y: end.y - window.scrollY };
       const rgb = hexToRgb(currentColor);
       interactionCtx.lineWidth = currentStroke.size;
       interactionCtx.lineCap = 'round';
@@ -686,33 +797,33 @@
 
       if (currentTool === 'square') {
         interactionCtx.beginPath();
-        interactionCtx.rect(start.x, start.y, end.x - start.x, end.y - start.y);
+        interactionCtx.rect(startViewport.x, startViewport.y, endViewport.x - startViewport.x, endViewport.y - startViewport.y);
         interactionCtx.stroke();
       } else if (currentTool === 'circle') {
-        const rx = (end.x - start.x) / 2;
-        const ry = (end.y - start.y) / 2;
-        const cx = start.x + rx;
-        const cy = start.y + ry;
+        const rx = (endViewport.x - startViewport.x) / 2;
+        const ry = (endViewport.y - startViewport.y) / 2;
+        const cx = startViewport.x + rx;
+        const cy = startViewport.y + ry;
         interactionCtx.beginPath();
         interactionCtx.ellipse(cx, cy, Math.abs(rx), Math.abs(ry), 0, 0, 2 * Math.PI);
         interactionCtx.stroke();
       } else if (currentTool === 'line') {
         interactionCtx.beginPath();
-        interactionCtx.moveTo(start.x, start.y);
-        interactionCtx.lineTo(end.x, end.y);
+        interactionCtx.moveTo(startViewport.x, startViewport.y);
+        interactionCtx.lineTo(endViewport.x, endViewport.y);
         interactionCtx.stroke();
       } else if (currentTool === 'arrow') {
         interactionCtx.beginPath();
-        interactionCtx.moveTo(start.x, start.y);
-        interactionCtx.lineTo(end.x, end.y);
+        interactionCtx.moveTo(startViewport.x, startViewport.y);
+        interactionCtx.lineTo(endViewport.x, endViewport.y);
         interactionCtx.stroke();
 
-        const angle = Math.atan2(end.y - start.y, end.x - start.x);
+        const angle = Math.atan2(endViewport.y - startViewport.y, endViewport.x - startViewport.x);
         const arrowLength = Math.max(10, currentStroke.size * 2);
         interactionCtx.beginPath();
-        interactionCtx.moveTo(end.x, end.y);
-        interactionCtx.lineTo(end.x - arrowLength * Math.cos(angle - Math.PI / 6), end.y - arrowLength * Math.sin(angle - Math.PI / 6));
-        interactionCtx.lineTo(end.x - arrowLength * Math.cos(angle + Math.PI / 6), end.y - arrowLength * Math.sin(angle + Math.PI / 6));
+        interactionCtx.moveTo(endViewport.x, endViewport.y);
+        interactionCtx.lineTo(endViewport.x - arrowLength * Math.cos(angle - Math.PI / 6), endViewport.y - arrowLength * Math.sin(angle - Math.PI / 6));
+        interactionCtx.lineTo(endViewport.x - arrowLength * Math.cos(angle + Math.PI / 6), endViewport.y - arrowLength * Math.sin(angle + Math.PI / 6));
         interactionCtx.closePath();
         interactionCtx.fill();
       }
@@ -851,50 +962,66 @@
   function refreshMagnifierImage() {
     if (currentTool !== 'magnifier') return;
     magnifierImageLoaded = false;
-    chrome.runtime.sendMessage({ type: "CAPTURE_ACTIVE_TAB" }, (response) => {
-      if (chrome.runtime.lastError) return;
-      if (response && response.dataUrl) {
-        const img = new Image();
-        img.onload = () => {
-          magnifierImage = img;
-          magnifierImageLoaded = true;
-        };
-        img.src = response.dataUrl;
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage({ type: "CAPTURE_ACTIVE_TAB" }, (response) => {
+          if (chrome.runtime.lastError) return;
+          if (response && response.dataUrl) {
+            const img = new Image();
+            img.onload = () => {
+              magnifierImage = img;
+              magnifierImageLoaded = true;
+            };
+            img.src = response.dataUrl;
+          }
+        });
       }
-    });
+    } catch (err) {
+      console.warn("[SR Overlay] Failed to capture active tab for magnifier:", err);
+    }
   }
 
   function executeCapture() {
     if (!toolbarEl) return;
     
-    const wasToolbarHidden = toolbarEl.classList.contains('sr-hidden');
-    const wasTriggerHidden = minimizedTrigger ? minimizedTrigger.classList.contains('sr-hidden') : true;
-    
     toolbarEl.style.display = 'none';
     if (minimizedTrigger) minimizedTrigger.style.display = 'none';
     
     setTimeout(() => {
-      chrome.runtime.sendMessage({ type: "CAPTURE_ACTIVE_TAB" }, (response) => {
-        toolbarEl.style.display = '';
-        if (minimizedTrigger && !wasTriggerHidden) {
-          minimizedTrigger.style.display = '';
+      try {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({ type: "CAPTURE_ACTIVE_TAB" }, (response) => {
+            toolbarEl.style.display = '';
+            if (minimizedTrigger) {
+              minimizedTrigger.style.display = '';
+            }
+            
+            if (chrome.runtime.lastError) return;
+            if (response && response.dataUrl) {
+              const link = document.createElement('a');
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+              link.download = `cappl_screenshot_${timestamp}.png`;
+              link.href = response.dataUrl;
+              if (shadowRoot) {
+                shadowRoot.appendChild(link);
+              } else {
+                document.body.appendChild(link);
+              }
+              link.click();
+              link.remove();
+            }
+          });
+          return;
         }
-        
-        if (chrome.runtime.lastError) return;
-        if (response && response.dataUrl) {
-          const link = document.createElement('a');
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          link.download = `cappl_screenshot_${timestamp}.png`;
-          link.href = response.dataUrl;
-          if (shadowRoot) {
-            shadowRoot.appendChild(link);
-          } else {
-            document.body.appendChild(link);
-          }
-          link.click();
-          link.remove();
-        }
-      });
+      } catch (err) {
+        console.warn("[SR Overlay] Failed to capture screen:", err);
+      }
+      
+      // Fallback if chrome.runtime is not available
+      toolbarEl.style.display = '';
+      if (minimizedTrigger) {
+        minimizedTrigger.style.display = '';
+      }
     }, 100);
   }
 
@@ -918,7 +1045,6 @@
       if (isCollapsed) {
         minimizedTrigger.classList.remove('sr-hidden');
         toolbarEl.classList.add('sr-hidden');
-        ensureElementInBounds(minimizedTrigger);
       } else {
         toolbarEl.classList.remove('sr-hidden');
         if (minimizedTrigger) minimizedTrigger.classList.add('sr-hidden');
@@ -930,12 +1056,26 @@
     }
   }
 
+  let scrollTimeout = null;
+  function handleScrollThrottled() {
+    if (scrollTimeout) return;
+    scrollTimeout = setTimeout(() => {
+      scrollTimeout = null;
+      refreshMagnifierImage();
+    }, 100);
+  }
+
   function selectTool(toolName, shouldBroadcast = true, isDirectSet = false) {
+    console.log("[SR Overlay] selectTool called with toolName:", toolName, "shouldBroadcast:", shouldBroadcast, "isDirectSet:", isDirectSet, "currentTool was:", currentTool);
     // Clean up magnifier if switching away
     if (currentTool === 'magnifier') {
-      window.removeEventListener('scroll', refreshMagnifierImage);
+      window.removeEventListener('scroll', handleScrollThrottled);
       magnifierImage = null;
       magnifierImageLoaded = false;
+      if (magnifierMoveTimeout) {
+        clearTimeout(magnifierMoveTimeout);
+        magnifierMoveTimeout = null;
+      }
     }
 
     if (isDirectSet) {
@@ -950,7 +1090,7 @@
 
     // Initialize magnifier if switching to it
     if (currentTool === 'magnifier') {
-      window.addEventListener('scroll', refreshMagnifierImage);
+      window.addEventListener('scroll', handleScrollThrottled);
       refreshMagnifierImage();
     }
 
@@ -1461,14 +1601,6 @@
     btnCollapse.addEventListener('click', () => {
       toolbarEl.classList.add('sr-hidden');
       minimizedTrigger.classList.remove('sr-hidden');
-      minimizedTrigger.style.bottom = toolbarEl.style.bottom;
-      minimizedTrigger.style.right = toolbarEl.style.right;
-      minimizedTrigger.style.top = toolbarEl.style.top;
-      minimizedTrigger.style.left = toolbarEl.style.left;
-
-      if (toolbarEl.style.top) {
-        ensureElementInBounds(minimizedTrigger);
-      }
     });
 
     let startX = 0;
@@ -1478,7 +1610,7 @@
       startY = e.clientY;
     });
 
-    minimizedTrigger.addEventListener('click', (e) => {
+    minimizedTrigger.addEventListener('mouseup', (e) => {
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
       if (Math.sqrt(dx * dx + dy * dy) > 5) {
@@ -1489,18 +1621,12 @@
 
       minimizedTrigger.classList.add('sr-hidden');
       toolbarEl.classList.remove('sr-hidden');
-      toolbarEl.style.bottom = minimizedTrigger.style.bottom;
-      toolbarEl.style.right = minimizedTrigger.style.right;
-      toolbarEl.style.top = minimizedTrigger.style.top;
-      toolbarEl.style.left = minimizedTrigger.style.left;
-
-      if (minimizedTrigger.style.top) {
+      if (toolbarEl.style.top) {
         ensureElementInBounds(toolbarEl);
       }
     });
 
     makeDraggable(toolbarEl, dragHandle);
-    makeDraggable(minimizedTrigger, minimizedTrigger);
 
     parent.appendChild(toolbarEl);
   }
@@ -1596,12 +1722,24 @@
 
   function applyInitialToolVisibility() {
     const tools = ['highlight', 'ripple', 'pencil', 'highlighter', 'square', 'circle', 'line', 'arrow', 'laser', 'magnifier', 'text', 'eraser', 'clear', 'undo', 'redo'];
-    chrome.storage.local.get({ toolVisibility: {} }, (res) => {
-      const visibility = res.toolVisibility || {};
-      tools.forEach(toolId => {
-        const isVisible = visibility[toolId] !== false;
-        updateToolbarButtonVisibility(toolId, isVisible);
-      });
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.get({ toolVisibility: {} }, (res) => {
+          const visibility = res.toolVisibility || {};
+          tools.forEach(toolId => {
+            const isVisible = visibility[toolId] !== false;
+            updateToolbarButtonVisibility(toolId, isVisible);
+          });
+        });
+        return;
+      }
+    } catch (err) {
+      console.warn("[SR Overlay] Failed to load initial tool visibility:", err);
+    }
+
+    // Fallback: show all tools by default
+    tools.forEach(toolId => {
+      updateToolbarButtonVisibility(toolId, true);
     });
   }
 
@@ -1618,20 +1756,24 @@
       }
 
       .sr-canvas {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        height: 100vh;
         margin: 0;
         padding: 0;
       }
 
       .sr-drawing-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
         z-index: 1;
+        pointer-events: none;
       }
 
       .sr-interaction-canvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
         z-index: 2;
         pointer-events: none;
       }
@@ -1808,34 +1950,47 @@
       }
 
       .sr-minimized-trigger {
-        position: fixed;
-        z-index: 100;
+        position: fixed !important;
+        z-index: 2147483647;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 42px;
-        height: 42px;
-        border-radius: 50%;
-        background: rgba(17, 24, 39, 0.85);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        width: 44px;
+        height: 48px;
+        border-radius: 0 12px 12px 0;
+        background: rgba(17, 24, 39, 0.35);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1.5px solid rgba(167, 139, 250, 0.4);
+        border-left: none;
         color: #a78bfa;
         cursor: pointer;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4), 0 0 12px rgba(167, 139, 250, 0.2);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), 0 0 12px rgba(167, 139, 250, 0.15);
         pointer-events: auto;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        padding-left: 2px;
       }
 
       .sr-minimized-trigger:hover {
-        transform: scale(1.1);
-        color: #c084fc;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4), 0 0 20px rgba(167, 139, 250, 0.4);
+        transform: translateY(-50%) scale(1.08);
+        background: rgba(17, 24, 39, 0.55);
+        color: #22d3ee;
+        border-color: rgba(34, 211, 238, 0.6);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35), 0 0 15px rgba(34, 211, 238, 0.3);
       }
 
       .sr-minimized-trigger svg {
         width: 22px;
         height: 22px;
+        filter: drop-shadow(0 0 4px rgba(167, 139, 250, 0.3));
+        transition: filter 0.3s;
+      }
+
+      .sr-minimized-trigger:hover svg {
+        filter: drop-shadow(0 0 6px rgba(34, 211, 238, 0.5));
       }
 
       .sr-hidden {
@@ -1845,8 +2000,7 @@
       /* Premium Hover Tooltips */
       .sr-btn,
       .sr-color-btn,
-      .sr-size-btn,
-      .sr-minimized-trigger {
+      .sr-size-btn {
         position: relative;
       }
 
@@ -1876,70 +2030,94 @@
 
       .sr-btn:hover::after,
       .sr-color-btn:hover::after,
-      .sr-size-btn:hover::after,
-      .sr-minimized-trigger:hover::after {
+      .sr-size-btn:hover::after {
         opacity: 1;
         transform: translateX(-50%) translateY(0);
+      }
+
+      /* Tooltip override for minimized trigger stuck to left edge */
+      .sr-minimized-trigger::after {
+        bottom: auto;
+        left: 125%;
+        top: 50%;
+        transform: translateY(-50%) translateX(-6px);
+      }
+
+      .sr-minimized-trigger:hover::after {
+        opacity: 1;
+        transform: translateY(-50%) translateX(0);
       }
     `;
   }
 
   // QUERY INITIAL STATE
-  chrome.runtime.sendMessage({ type: "GET_RECORDING_STATE" }, (response) => {
-    if (chrome.runtime.lastError) return;
-    if (response) {
-      isRecording = response.isRecording;
-      const displaySurface = response.displaySurface || "browser";
-      if (isRecording && displaySurface === "browser") {
-        initOverlay();
-      }
+  try {
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+      chrome.runtime.sendMessage({ type: "GET_RECORDING_STATE" }, (response) => {
+        if (chrome.runtime.lastError) return;
+        if (response) {
+          isRecording = response.isRecording;
+          const displaySurface = response.displaySurface || "browser";
+          if (isRecording && displaySurface === "browser") {
+            initOverlay();
+          }
+        }
+      });
     }
-  });
+  } catch (err) {
+    console.warn("[SR Overlay] Failed to query initial state:", err);
+  }
 
   // STATE CHANGE BROADCAST LISTENER
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "STATE_CHANGED") {
-      isRecording = message.isRecording;
-      const displaySurface = message.displaySurface || "browser";
-      if (isRecording && displaySurface === "browser") {
-        initOverlay();
-      } else {
-        removeOverlay();
-      }
-    } else if (message.type === "TOOL_VISIBILITY_CHANGED") {
-      if (typeof updateToolbarButtonVisibility === 'function') {
-        updateToolbarButtonVisibility(message.toolId, message.isVisible);
-      }
-    } else if (message.type === "SETTINGS_CHANGED") {
-      if (message.showHighlight !== undefined) {
-        showHighlight = message.showHighlight;
-      }
-      if (message.showClickRipple !== undefined) {
-        showClickRipple = message.showClickRipple;
-      }
-      if (message.showCaptureBtn !== undefined) {
-        showCaptureBtn = message.showCaptureBtn;
-      }
-      if (message.showDrawingBar !== undefined) {
-        showDrawingBar = message.showDrawingBar;
-        if (typeof updateDrawingBarVisibility === 'function') {
-          updateDrawingBarVisibility(showDrawingBar);
+  try {
+    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+      chrome.runtime.onMessage.addListener((message) => {
+        if (message.type === "STATE_CHANGED") {
+          isRecording = message.isRecording;
+          const displaySurface = message.displaySurface || "browser";
+          if (isRecording && displaySurface === "browser") {
+            initOverlay();
+          } else {
+            removeOverlay();
+          }
+        } else if (message.type === "TOOL_VISIBILITY_CHANGED") {
+          if (typeof updateToolbarButtonVisibility === 'function') {
+            updateToolbarButtonVisibility(message.toolId, message.isVisible);
+          }
+        } else if (message.type === "SETTINGS_CHANGED") {
+          if (message.showHighlight !== undefined) {
+            showHighlight = message.showHighlight;
+          }
+          if (message.showClickRipple !== undefined) {
+            showClickRipple = message.showClickRipple;
+          }
+          if (message.showCaptureBtn !== undefined) {
+            showCaptureBtn = message.showCaptureBtn;
+          }
+          if (message.showDrawingBar !== undefined) {
+            showDrawingBar = message.showDrawingBar;
+            if (typeof updateDrawingBarVisibility === 'function') {
+              updateDrawingBarVisibility(showDrawingBar);
+            }
+          }
+          if (message.currentColor !== undefined) {
+            currentColor = message.currentColor;
+          }
+          if (message.brushSize !== undefined) {
+            brushSize = message.brushSize;
+          }
+          if (message.currentTool !== undefined) {
+            if (currentTool !== message.currentTool) {
+              selectTool(message.currentTool, false, true);
+            }
+          }
+          if (typeof updateToolbarUI === 'function') {
+            updateToolbarUI();
+          }
         }
-      }
-      if (message.currentColor !== undefined) {
-        currentColor = message.currentColor;
-      }
-      if (message.brushSize !== undefined) {
-        brushSize = message.brushSize;
-      }
-      if (message.currentTool !== undefined) {
-        if (currentTool !== message.currentTool) {
-          selectTool(message.currentTool, false, true);
-        }
-      }
-      if (typeof updateToolbarUI === 'function') {
-        updateToolbarUI();
-      }
+      });
     }
-  });
+  } catch (err) {
+    console.warn("[SR Overlay] Failed to register message listener:", err);
+  }
 })();

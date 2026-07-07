@@ -121,6 +121,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       chrome.tabs.sendMessage(recorderTabId, { type: "STOP" }).catch(() => {});
     }
 
+    // Reset currentTool to "none" and showDrawingBar to true for clean slate
+    chrome.storage.local.set({ currentTool: "none", showDrawingBar: true }).catch(() => {});
+
     // Capture the current active tab ID before creating the recorder tab
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs[0]) {
@@ -163,6 +166,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     isRecording = false;
     startTime = null;
     currentDisplaySurface = "browser"; // Reset default
+    chrome.storage.local.set({ currentTool: "none", showDrawingBar: true }).catch(() => {});
     broadcastState();
   }
 
